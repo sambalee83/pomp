@@ -62,6 +62,8 @@
   #simohje { position: fixed; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 0.8rem; opacity: 0.7; pointer-events: none; padding: 0 1rem; }
   #simohje[hidden] { display: none; }
 
+  #versio { position: absolute; left: 0; right: 0; bottom: max(8px, env(safe-area-inset-bottom)); margin: 0; font-size: 0.8rem; opacity: 0.5; }
+
   #kaanna { display: none; z-index: 10; }
   @media (orientation: portrait) and (pointer: coarse) { #kaanna { display: flex; } }
 </style>
@@ -87,6 +89,7 @@
     <li>Koko keho näkyviin päästä varpaisiin.</li>
   </ul>
   <button id="btnSim" class="linkki">Kokeile ilman kameraa</button>
+  <p id="versio"></p>
 </div>
 
 <div id="viesti" class="overlay" hidden>

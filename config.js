@@ -6,7 +6,7 @@
 // Esimerkki: hyppy.kynnys 0.30 = lantion pitää nousta 30 % hartialeveydestä (noin 8–9 cm).
 
 export const CONFIG = {
-  versio: '0.1.0 (vaihe 1: moottori)',
+  versio: '0.1.1 (vaihe 1: moottori, hypyn liioittelu)', // näkyy aloitusruudun alareunassa. Nosta aina kun muutat jotain.
 
   kamera: {
     oletus: 'environment', // 'environment' = takakamera, 'user' = etukamera

@@ -99,6 +99,7 @@ function startSimulator() {
   startCalibration();
 }
 
+$('versio').textContent = 'versio ' + CONFIG.versio;
 $('btnAloita').onclick = startWithCamera;
 $('btnUudelleen').onclick = startWithCamera;
 $('btnSim').onclick = startSimulator;
