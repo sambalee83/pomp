@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Pomp!</title>
+<meta name="theme-color" content="#1D1147">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --yo: #1D1147; --yo-vaalea: #3B2596; --aariviiva: #3A2156;
+    --keltainen: #FFC93C; --oikea: #FF4057; --vasen: #2D8CFF; --minttu: #3DE0B0; --kerma: #FFF4D6;
+    --fontti: Fredoka, "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--yo); color: var(--kerma);
+    font-family: var(--fontti); -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+  #cam { position: fixed; left: 0; top: 0; width: 4px; height: 4px; opacity: 0.01; pointer-events: none; }
+  #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1.1rem; padding: 1.5rem; text-align: center;
+    background: radial-gradient(120% 90% at 50% 105%, var(--yo-vaalea) 0%, var(--yo) 62%); }
+  .overlay[hidden] { display: none; }
+
+  .nimi { margin: 0; font-size: clamp(4.5rem, 19vw, 11rem); font-weight: 700; line-height: 0.9; letter-spacing: -0.02em;
+    color: var(--keltainen); text-shadow: 0 0.07em 0 var(--oikea), 0 0.14em 0 var(--aariviiva); }
+  .nimi span { display: inline-block; }
+  @media (prefers-reduced-motion: no-preference) {
+    .nimi .o { animation: pomppu 0.9s cubic-bezier(.3, 1.6, .5, 1) 0.25s both; }
+    @keyframes pomppu { 0% { transform: translateY(0) scale(1, 1); } 30% { transform: translateY(-0.42em) scale(0.92, 1.1); }
+      62% { transform: translateY(0) scale(1.14, 0.82); } 100% { transform: translateY(0) scale(1, 1); } }
+  }
+  .kuvaus { margin: 0.6rem 0 0; font-size: clamp(1.05rem, 2.6vw, 1.5rem); font-weight: 500; max-width: 34ch; }
+  .ohje { margin: 0; padding: 0; list-style: none; font-size: clamp(0.9rem, 2vw, 1.05rem); opacity: 0.8; line-height: 1.5; }
+
+  button { font-family: var(--fontti); cursor: pointer; border: 0; }
+  button:focus-visible { outline: 3px solid var(--minttu); outline-offset: 3px; }
+  .iso { font-size: clamp(1.25rem, 3.4vw, 1.8rem); font-weight: 600; padding: 0.7em 1.5em; border-radius: 999px;
+    color: var(--aariviiva); background: var(--keltainen); box-shadow: 0 0.28em 0 #C98A00; }
+  .iso:active { transform: translateY(0.14em); box-shadow: 0 0.14em 0 #C98A00; }
+  .linkki { background: none; color: var(--kerma); font-size: 1rem; text-decoration: underline; text-underline-offset: 0.2em; padding: 0.5em; opacity: 0.85; }
+
+  #viesti p { margin: 0; font-size: clamp(1.2rem, 3vw, 1.7rem); font-weight: 500; max-width: 30ch; }
+  #viesti .pieni { font-size: 1rem; opacity: 0.75; font-weight: 400; }
+
+  #tyokalut { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right));
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  #tyokalut[hidden] { display: none; }
+  #tyokalut button { font-size: 0.85rem; font-weight: 500; padding: 0.45em 0.9em; border-radius: 999px;
+    color: var(--kerma); background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(6px); }
+  #tyokalut button[aria-pressed="true"] { background: var(--minttu); color: var(--aariviiva); }
+
+  #simohje { position: fixed; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 0.8rem; opacity: 0.7; pointer-events: none; padding: 0 1rem; }
+  #simohje[hidden] { display: none; }
+
+  #kaanna { display: none; z-index: 10; }
+  @media (orientation: portrait) and (pointer: coarse) { #kaanna { display: flex; } }
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted autoplay></video>
+<canvas id="stage"></canvas>
+
+<div id="tyokalut" hidden>
+  <button id="btnDebug" aria-pressed="false">Mittarit</button>
+  <button id="btnKalibroi">Kalibroi uudelleen</button>
+  <button id="btnKamera">Vaihda kamera</button>
+  <button id="btnKiihdytys">GPU</button>
+</div>
+<div id="simohje" hidden></div>
+
+<div id="alku" class="overlay">
+  <h1 class="nimi" aria-label="Pomp!"><span>P</span><span class="o">o</span><span>m</span><span>p</span><span>!</span></h1>
+  <p class="kuvaus">Liikuntapeli, jota ohjataan koko keholla.</p>
+  <button id="btnAloita" class="iso">Käynnistä kamera</button>
+  <ul class="ohje">
+    <li>Puhelin vaakaan ja telineeseen, 2–3 metrin päähän.</li>
+    <li>Koko keho näkyviin päästä varpaisiin.</li>
+  </ul>
+  <button id="btnSim" class="linkki">Kokeile ilman kameraa</button>
+</div>
+
+<div id="viesti" class="overlay" hidden>
+  <p id="viestiTeksti"></p>
+  <p id="viestiLisa" class="pieni"></p>
+  <button id="btnUudelleen" class="iso" hidden>Yritä uudelleen</button>
+</div>
+
+<div id="kaanna" class="overlay">
+  <p class="kuvaus">Käännä puhelin vaakaan.</p>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

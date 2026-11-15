@@ -1,0 +1,10 @@
+{
+  "name": "Pomp!",
+  "short_name": "Pomp!",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1D1147",
+  "theme_color": "#1D1147",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
