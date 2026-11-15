@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Pomp! – tyylilinjaus</title>
+<meta name="theme-color" content="#1D1147">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --yo: #1D1147; --kerma: #FFF4D6; --keltainen: #FFC93C; --minttu: #3DE0B0;
+    --fontti: Fredoka, "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--yo); color: var(--kerma);
+    font-family: var(--fontti); -webkit-user-select: none; user-select: none; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+
+  /* Diojen pisteet */
+  #pisteet { position: fixed; left: 50%; bottom: max(6px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    display: flex; align-items: center; z-index: 2; }
+  #pisteet button { appearance: none; -webkit-appearance: none; border: 0; background: none; padding: 8px 5px; cursor: pointer; }
+  #pisteet button span { display: block; width: 10px; height: 10px; border-radius: 999px; background: var(--kerma); opacity: 0.32;
+    transition: width 0.3s cubic-bezier(.3, 1.4, .5, 1), opacity 0.2s, background-color 0.2s; }
+  #pisteet button[aria-current="true"] span { width: 30px; opacity: 1; background: var(--keltainen); }
+  #pisteet button:focus-visible { outline: 2px solid var(--minttu); outline-offset: -2px; border-radius: 999px; }
+  @media (max-height: 480px) {
+    #pisteet button { padding: 5px 4px; }
+    #pisteet button span { width: 7px; height: 7px; }
+    #pisteet button[aria-current="true"] span { width: 20px; }
+  }
+
+  .pieni { position: fixed; margin: 0; font-size: 0.8rem; font-weight: 500; opacity: 0; pointer-events: none;
+    transition: opacity 0.6s; z-index: 2; }
+  .pieni.nakyy { opacity: 0.6; }
+  #vihje { right: max(14px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
+  #auto { left: max(14px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); color: var(--minttu); }
+  #esilataus { position: absolute; left: -999px; top: 0; opacity: 0; pointer-events: none; }
+  #esilataus span { font-family: Fredoka; }
+
+  #kaanna { position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center;
+    padding: 1.5rem; text-align: center; background: var(--yo); font-size: 1.3rem; font-weight: 500; }
+  @media (orientation: portrait) and (pointer: coarse) { #kaanna { display: flex; } }
+  @media (prefers-reduced-motion: reduce) { #pisteet button span, .pieni { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="c" role="img" aria-label="Pomp! – tyylilinjaus. Kuusi diaa: logo, väripaletti ja typografia, hahmo, käyttöliittymä, esimerkkipeli ja tehosteet."></canvas>
+<nav id="pisteet" aria-label="Diat"></nav>
+<p id="vihje" class="pieni">Selaa: ← → tai napauta ruudun reunaa</p>
+<p id="auto" class="pieni">Automaattinen vaihto päällä (A)</p>
+<div id="esilataus" aria-hidden="true"><span style="font-weight:400">a</span><span style="font-weight:500">a</span><span style="font-weight:600">a</span><span style="font-weight:700">a</span></div>
+<div id="kaanna">Käännä puhelin vaakaan.</div>
+
+<script>
+// Pomp! – tyylilinjaus. Kaikki grafiikka piirretään koodilla (Canvas 2D), ei kuvatiedostoja.
+// Rakenne: 1 apuvälineet · 2 värit · 3 näkymä · 4 piirtoapurit · 5 hiukkaset · 6 hahmo · 7 asennot
+//          8 käyttöliittymän osat · 9 diat · 10 selaus ja pääsilmukka
+(() => {
+'use strict';
+
+// ───────────────────────── 1. Apuvälineet ─────────────────────────
+const PI = Math.PI, TAU = Math.PI * 2;
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+const sat = (x) => clamp(x, 0, 1);
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => sat((t - a) / (b - a));           // etenemä aikavälillä a…b
+const smooth = (t) => { t = sat(t); return t * t * (3 - 2 * t); };
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const E = { // pehmennykset: mikään ei liiku tasaisella nopeudella
+  inQuad: (t) => { t = sat(t); return t * t; },
+  inCubic: (t) => { t = sat(t); return t * t * t; },
+  outCubic: (t) => 1 - Math.pow(1 - sat(t), 3),
+  inOutCubic: (t) => { t = sat(t); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+  outBack: (t) => { t = sat(t); const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+  outElastic: (t) => { t = sat(t); return t === 0 || t === 1 ? t : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * TAU / 3) + 1; },
+};
+function mulberry(seed) { // toistettava satunnaisluku (tähtitaivas pysyy samana)
+  return () => { let t = (seed += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const RM = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); // vähennetty liike
+const N = (n) => Math.max(1, Math.round(n * (RM ? 0.5 : 1)));  // hiukkasmäärä
+
+// ───────────────────────── 2. Värit ja fontti ─────────────────────────
+const C = {
+  yo: '#1D1147', yoSyva: '#120A30', yoVaalea: '#3B2596', viiva: '#3A2156',
+  kelt: '#FFC93C', keltVarjo: '#F0A81E', keltValo: '#FFE08A', keltSyva: '#C98A00',
+  oikea: '#FF4057', oikeaVarjo: '#C92445', vasen: '#2D8CFF', vasenVarjo: '#1B66CC',
+  minttu: '#3DE0B0', minttuVarjo: '#1FA886', kerma: '#FFF4D6', laventeli: '#B7A8FF',
+  kivi: '#D8CFFA', kiviVarjo: '#A698E8',
+};
+const FONT = 'Fredoka, "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';
+const font = (w, size) => `${w} ${size}px ${FONT}`;
+const OUT = 5; // ääriviivan paksuus suunnittelupikseleinä (1600 leveällä)
+
+// ───────────────────────── 3. Näkymä ─────────────────────────
+// Sisältö suunnitellaan 1600×900-alueelle, joka skaalataan ruutuun. Reunojen yli jäävä tila
+// (view.x0…x1, y0…y1) täytetään taustalla, pelinäkymä piirtää sen täyteen.
+const DW = 1600, DH = 900;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const bg = document.createElement('canvas');
+const view = { W: 1, H: 1, dpr: 1, s: 1, ox: 0, oy: 0, x0: 0, x1: DW, y0: 0, y1: DH };
+let fontVer = 0;
+
+function resize() {
+  const W = Math.max(1, window.innerWidth), H = Math.max(1, window.innerHeight);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  view.W = W; view.H = H; view.dpr = dpr;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  view.s = Math.min(W / DW, H / DH);
+  view.ox = (W - DW * view.s) / 2; view.oy = (H - DH * view.s) / 2;
+  view.x0 = -view.ox / view.s; view.x1 = DW + view.ox / view.s;
+  view.y0 = -view.oy / view.s; view.y1 = DH + view.oy / view.s;
+  buildBg();
+}
+function setDesign(shift) { // piirtokoordinaatisto = suunnittelualue
+  const k = view.dpr * view.s;
+  ctx.setTransform(k, 0, 0, k, view.dpr * (view.ox + (shift || 0) * view.s), view.dpr * view.oy);
+}
+function buildBg() { // tausta piirretään kerran puolella tarkkuudella (pelkkiä liukuja)
+  const w = bg.width = Math.max(2, Math.ceil(cv.width / 2)), h = bg.height = Math.max(2, Math.ceil(cv.height / 2));
+  const g = bg.getContext('2d');
+  g.fillStyle = C.yo; g.fillRect(0, 0, w, h);
+  g.save(); g.translate(w / 2, h * 1.05); g.scale(w * 0.62, h * 0.92);
+  let gr = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+  gr.addColorStop(0, 'rgba(59,37,150,1)'); gr.addColorStop(0.7, 'rgba(45,27,112,0.35)'); gr.addColorStop(1, 'rgba(29,17,71,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill();
+  g.restore();
+  gr = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.hypot(w, h) / 2); // vinjetti
+  gr.addColorStop(0, 'rgba(10,5,32,0)'); gr.addColorStop(1, 'rgba(10,5,32,0.5)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+}
+const SKY = (() => { const r = mulberry(7); return Array.from({ length: 44 }, () => ({ x: r(), y: r() * 0.6, r: 1.2 + r() * 1.8, f: 0.5 + r() * 1.3, ph: r() * TAU })); })();
+function drawSkyStars(t, yMax) {
+  ctx.fillStyle = C.kerma;
+  for (const s of SKY) {
+    const y = lerp(view.y0, yMax, s.y);
+    ctx.globalAlpha = 0.22 + 0.2 * (RM ? 0.5 : 0.5 + 0.5 * Math.sin(t * s.f + s.ph));
+    ctx.beginPath(); ctx.arc(lerp(view.x0, view.x1, s.x), y, s.r, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ───────────────────────── 4. Piirtoapurit ─────────────────────────
+function rr(c, x, y, w, h, r) { // pyöristetty suorakulmio
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+function txt(s, x, y, size, col, w, align, base) {
+  ctx.font = font(w || 600, size); ctx.textAlign = align || 'left'; ctx.textBaseline = base || 'alphabetic';
+  ctx.fillStyle = col; ctx.fillText(s, x, y);
+}
+const ctext = (s, x, y, size, col, w) => txt(s, x, y + size * 0.05, size, col, w, 'center', 'middle'); // keskitetty
+// Tasavarjostus: perusväri + tumma sirppi oikeassa alareunassa (valo tulee vasemmalta ylhäältä).
+// path() aloittaa itse polun. inner() piirretään muodon sisään rajattuna.
+function celFill(c, path, base, dark, dx, dy, inner) {
+  path(); c.fillStyle = base; c.fill();
+  c.save(); path(); c.clip();
+  c.fillStyle = dark; path(); c.fill();
+  c.save(); c.translate(dx, dy); path(); c.fillStyle = base; c.fill(); c.restore();
+  if (inner) inner();
+  c.restore();
+}
+function starPath(c, x, y, r, rot, inner) {
+  c.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = rot - PI / 2 + i * PI / 5, q = i % 2 ? r * inner : r;
+    if (i) c.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q); else c.moveTo(x + Math.cos(a) * q, y + Math.sin(a) * q);
+  }
+  c.closePath();
+}
+function sparklePath(c, x, y, r, rot) { // nelisakarainen kipinä
+  c.beginPath(); c.moveTo(x + Math.cos(rot) * r, y + Math.sin(rot) * r);
+  for (let i = 0; i < 4; i++) {
+    const a = rot + (i + 1) * PI / 2, b = rot + i * PI / 2 + PI / 4;
+    c.quadraticCurveTo(x + Math.cos(b) * r * 0.14, y + Math.sin(b) * r * 0.14, x + Math.cos(a) * r, y + Math.sin(a) * r);
+  }
+  c.closePath();
+}
+function drawStar(c, x, y, r, rot, ow) { // keräiltävä tähti: pyöreät kärjet, ääriviiva, vaalea sydän
+  if (r <= 0.5) return;
+  c.save(); c.lineJoin = 'round';
+  const soft = r * 0.3;
+  starPath(c, x, y, r * 0.86, rot, 0.52);
+  if (ow) { c.strokeStyle = C.viiva; c.lineWidth = soft + ow * 2; c.stroke(); }
+  c.strokeStyle = C.kelt; c.lineWidth = soft; c.stroke(); c.fillStyle = C.kelt; c.fill();
+  starPath(c, x - r * 0.05, y - r * 0.07, r * 0.5, rot, 0.52);
+  c.strokeStyle = c.fillStyle = C.keltValo; c.lineWidth = soft * 0.5; c.stroke(); c.fill();
+  c.beginPath(); c.arc(x - r * 0.2, y - r * 0.26, r * 0.085, 0, TAU); c.fillStyle = 'rgba(255,255,255,0.9)'; c.fill();
+  c.restore();
+}
+function drawRock(c, x, y, s, sy) { // este: vaalea kivi
+  c.save(); c.translate(x, y); c.scale(s, s * (sy == null ? 1 : sy)); c.lineJoin = 'round';
+  const p = () => { c.beginPath(); c.moveTo(-50, 0); c.quadraticCurveTo(-60, -46, -22, -62); c.quadraticCurveTo(10, -74, 38, -52); c.quadraticCurveTo(60, -34, 50, 0); c.closePath(); };
+  celFill(c, p, C.kivi, C.kiviVarjo, -8, -9, () => {
+    c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.ellipse(-22, -42, 12, 6, -0.6, 0, TAU); c.fill();
+    c.fillStyle = C.kiviVarjo; c.beginPath(); c.arc(10, -22, 4.5, 0, TAU); c.fill(); c.beginPath(); c.arc(24, -36, 3, 0, TAU); c.fill();
+  });
+  p(); c.strokeStyle = C.viiva; c.lineWidth = OUT / s; c.stroke();
+  c.restore();
+}
+function depthText(c, str, x, y, size, face, edge) { // syvyystekstit suurille hetkille (3-2-1-POMP!)
+  const d = size * 0.085;
+  c.font = font(700, size); c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round';
+  c.strokeStyle = C.viiva; c.lineWidth = size * 0.1;
+  c.strokeText(str, x, y + d); c.strokeText(str, x, y + d * 0.5); c.strokeText(str, x, y);
+  c.fillStyle = edge; for (let i = 4; i >= 1; i--) c.fillText(str, x, y + d * i / 4);
+  c.fillStyle = face; c.fillText(str, x, y);
+}
+
+// ───────────────────────── 5. Hiukkaset ja tehosteet ─────────────────────────
+class Particles {
+  constructor(max) { this.a = []; this.max = max || 300; }
+  add(o) { if (this.a.length >= this.max) this.a.shift(); o.t = 0; this.a.push(o); return o; }
+  clear() { this.a.length = 0; }
+  update(dt) {
+    const a = this.a;
+    for (let i = a.length - 1; i >= 0; i--) {
+      const p = a[i]; p.t += dt;
+      if (p.t >= p.life) { a.splice(i, 1); continue; }
+      p.vy += (p.g || 0) * dt;
+      if (p.drag) { const k = Math.exp(-p.drag * dt); p.vx *= k; p.vy *= k; }
+      p.x += p.vx * dt; p.y += p.vy * dt; p.rot = (p.rot || 0) + (p.vr || 0) * dt;
+    }
+  }
+  draw(c) {
+    for (const p of this.a) {
+      const k = p.t / p.life;
+      switch (p.type) {
+        case 'puff': {
+          c.globalAlpha = (p.a || 0.5) * Math.pow(1 - k, 1.4); c.fillStyle = p.col;
+          c.beginPath(); c.arc(p.x, p.y, p.r * (0.45 + 0.75 * E.outCubic(k)), 0, TAU); c.fill(); break;
+        }
+        case 'star': case 'spark': {
+          const s = Math.max(0, E.outBack(k * 4) * (1 - E.inCubic(seg(k, 0.5, 1))));
+          if (s <= 0.01) break;
+          c.globalAlpha = 1; c.fillStyle = p.col;
+          if (p.type === 'star') starPath(c, p.x, p.y, p.r * s, p.rot, 0.5); else sparklePath(c, p.x, p.y, p.r * s, p.rot);
+          c.fill(); break;
+        }
+        case 'ring': {
+          const e = E.outCubic(k);
+          c.globalAlpha = 1 - k; c.strokeStyle = p.col; c.lineWidth = Math.max(0.5, p.w * (1 - e));
+          c.beginPath(); c.arc(p.x, p.y, lerp(p.r0, p.r1, e), 0, TAU); c.stroke(); break;
+        }
+        case 'conf': {
+          c.globalAlpha = 1 - E.inCubic(seg(k, 0.7, 1));
+          c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.scale(1, Math.cos(p.t * p.flip));
+          c.fillStyle = p.col; rr(c, -p.w / 2, -p.h / 2, p.w, p.h, Math.min(p.w, p.h) * 0.3); c.fill(); c.restore(); break;
+        }
+        case 'text': {
+          const s = Math.max(0.01, E.outBack(k * 3.5));
+          c.globalAlpha = 1 - E.inCubic(seg(k, 0.6, 1));
+          c.save(); c.translate(p.x, p.y); c.scale(s, s);
+          c.font = font(700, p.size); c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+          c.strokeStyle = C.viiva; c.lineWidth = p.size * 0.22; c.strokeText(p.str, 0, 0);
+          c.fillStyle = p.col; c.fillText(p.str, 0, 0); c.restore(); break;
+        }
+      }
+    }
+    c.globalAlpha = 1;
+  }
+}
+// Tehosteet: s = mittakaava. Värit: vain keltainen, minttu, kerma ja laventeli (punainen/sininen on varattu käsille).
+function fxDust(ps, x, y, s, n, power) {
+  for (let i = 0; i < N(n); i++) {
+    const d = i % 2 ? 1 : -1;
+    ps.add({ type: 'puff', x: x + d * rand(6, 22) * s, y: y - rand(0, 8) * s, vx: d * rand(50, 190) * s * power, vy: -rand(10, 70) * s,
+      drag: 3.5, r: rand(10, 19) * s, life: rand(0.35, 0.6), col: '#CFC4FF', a: 0.42 });
+  }
+}
+function fxStars(ps, x, y, s, n) {
+  for (let i = 0; i < N(n); i++) {
+    const a = -PI / 2 + rand(-1.15, 1.15), v = rand(190, 380) * s;
+    ps.add({ type: 'star', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 620 * s, drag: 1.2, r: rand(9, 15) * s,
+      rot: rand(0, TAU), vr: rand(-4, 4), life: rand(0.5, 0.8), col: pick([C.kelt, C.kerma, C.minttu]) });
+  }
+}
+function fxCollect(ps, x, y, s) {
+  ps.add({ type: 'ring', x, y, vx: 0, vy: 0, r0: 16 * s, r1: 78 * s, w: 12 * s, life: 0.4, col: C.minttu });
+  const n = N(10), o = rand(0, TAU);
+  for (let i = 0; i < n; i++) {
+    const a = o + i * TAU / n, v = rand(230, 380) * s;
+    ps.add({ type: 'spark', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 4, r: rand(13, 22) * s, rot: rand(0, TAU), vr: rand(-3, 3),
+      life: rand(0.4, 0.62), col: i % 3 === 0 ? C.kerma : i % 3 === 1 ? C.minttu : C.kelt });
+  }
+  ps.add({ type: 'text', x, y: y - 26 * s, vx: 0, vy: -120 * s, drag: 2.2, life: 0.8, str: '+1', size: 46 * s, col: C.minttu });
+}
+function fxHit(ps, x, y, s) {
+  ps.add({ type: 'ring', x, y, vx: 0, vy: 0, r0: 20 * s, r1: 110 * s, w: 14 * s, life: 0.35, col: C.kerma });
+  fxDust(ps, x, y + 30 * s, s, 6, 1.2);
+  for (let i = 0; i < N(6); i++) {
+    const a = rand(0, TAU), v = rand(240, 420) * s;
+    ps.add({ type: 'spark', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 4.5, r: rand(12, 20) * s, rot: rand(0, TAU), life: rand(0.3, 0.5), col: C.kerma });
+  }
+}
+function fxConfetti(ps, x, y, dir, n) {
+  for (let i = 0; i < N(n); i++) {
+    const a = -PI / 2 + dir * rand(0.15, 0.95), v = rand(420, 820);
+    ps.add({ type: 'conf', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 950, drag: 1.1, w: rand(12, 20), h: rand(8, 12),
+      rot: rand(0, TAU), vr: rand(-6, 6), flip: rand(7, 13), life: rand(1.2, 1.9), col: pick([C.kelt, C.minttu, C.kerma, C.laventeli]) });
+  }
+}
+function smoothTrail(pts) { // Catmull–Rom-tasoitus: harvatkin näytteet (kamera ~30 kertaa sekunnissa) piirtyvät kaarena
+  const n = pts.length, out = [];
+  const cr = (a, b, c, d, u) => 0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (3 * b - a - 3 * c + d) * u * u * u);
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
+    for (let k = 0; k < 4; k++) { const u = k / 4; out.push({ x: cr(p0.x, p1.x, p2.x, p3.x, u), y: cr(p0.y, p1.y, p2.y, p3.y, u), t: lerp(p1.t, p2.t, u) }); }
+  }
+  out.push(pts[n - 1]);
+  return out;
+}
+function drawTrail(c, pts, now, life, W, col) { // viiltovana: kapeneva nauha + vaalea ydin
+  if (pts.length < 3) return;
+  pts = smoothTrail(pts);
+  const n = pts.length;
+  for (let pass = 0; pass < 2; pass++) {
+    const k = pass ? 0.38 : 1, L = [], R = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let dx = b.x - a.x, dy = b.y - a.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+      const w = W * k * Math.pow(1 - sat((now - pts[i].t) / life), 0.9);
+      L.push(pts[i].x - dy * w, pts[i].y + dx * w); R.push(pts[i].x + dy * w, pts[i].y - dx * w);
+    }
+    c.beginPath(); c.moveTo(L[0], L[1]);
+    for (let i = 2; i < L.length; i += 2) c.lineTo(L[i], L[i + 1]);
+    for (let i = R.length - 2; i >= 0; i -= 2) c.lineTo(R[i], R[i + 1]);
+    c.closePath(); c.globalAlpha = pass ? 0.65 : 0.9; c.fillStyle = pass ? '#FFFFFF' : col; c.fill();
+  }
+  c.globalAlpha = 1;
+}
+
+// ───────────────────────── 6. Hahmo ─────────────────────────
+// drawCharacter(ctx, pts, unit, state)
+//   pts   = 33 MediaPipe-pistettä ruudun koordinaateissa [{x, y}, …]. Peilikuva: oikea käsi on ruudun oikealla.
+//   unit  = hartialeveys ruudulla. Kaikki paksuudet ja koot ovat sen kerrannaisia.
+//   state = { blink 0–1, mood 0–1 (riemu), oops 0–1 (hups), stretch (pään venytys), bob {x, y} (tupsun heilahdus),
+//             lookX/lookY −1…1, palmExt, noBob, shoeLetters } – kaikki valinnaisia.
+// Käytetyt pisteet: nenä 0, korvat 7/8, hartiat 11/12, kyynärpäät 13/14, ranteet 15/16, lantio 23/24, polvet 25/26, nilkat 27/28.
+const LM = { NOSE: 0, L_EAR: 7, R_EAR: 8, L_SHOULDER: 11, R_SHOULDER: 12, L_ELBOW: 13, R_ELBOW: 14, L_WRIST: 15, R_WRIST: 16,
+  L_HIP: 23, R_HIP: 24, L_KNEE: 25, R_KNEE: 26, L_ANKLE: 27, R_ANKLE: 28 };
+const K = { body: C.kelt, shade: C.keltVarjo, belly: '#FFE9A8', line: C.viiva, R: C.oikea, Rd: C.oikeaVarjo, L: C.vasen, Ld: C.vasenVarjo,
+  cuff: C.kerma, bob: C.minttu, bobD: C.minttuVarjo, mouth: '#8E1838', tongue: '#FF7A93' };
+const ZERO = { x: 0, y: 0 }, HEAD = 1.14, HEAD_UP = 0.2; // pään koko (× hartialeveys) ja keskipiste nenän yläpuolella
+
+function chLimbPath(c, a, b, d) { // pehmeä kaari nivelen kautta (letkuraaja)
+  const mx = (a.x + d.x) / 2, my = (a.y + d.y) / 2;
+  c.beginPath(); c.moveTo(a.x, a.y); c.quadraticCurveTo(b.x + (b.x - mx) * 0.7, b.y + (b.y - my) * 0.7, d.x, d.y);
+}
+function chLimb(c, a, b, d, w, col, hi, ow) {
+  chLimbPath(c, a, b, d);
+  c.strokeStyle = K.line; c.lineWidth = w + ow * 2; c.stroke();
+  c.strokeStyle = col; c.lineWidth = w; c.stroke();
+  if (hi) { c.save(); c.translate(-w * 0.16, -w * 0.16); chLimbPath(c, a, b, d); c.strokeStyle = hi; c.lineWidth = w * 0.26; c.stroke(); c.restore(); }
+}
+function chTorsoQuad(sl, sr, hl, hr, u) { // päärynän kulmapisteet: hartiat kapeammat, lantio leveämpi
+  const smx = (sl.x + sr.x) / 2, smy = (sl.y + sr.y) / 2, hmx = (hl.x + hr.x) / 2, hmy = (hl.y + hr.y) / 2;
+  let ax = hmx - smx, ay = hmy - smy; const al = Math.hypot(ax, ay) || 1; ax /= al; ay /= al;
+  let tx = (sr.x - sl.x) / 2, ty = (sr.y - sl.y) / 2, tl = Math.hypot(tx, ty);
+  let bx = (hr.x - hl.x) / 2, by = (hr.y - hl.y) / 2, bl = Math.hypot(bx, by);
+  if (tl < 0.05 * u) { tx = ay; ty = -ax; tl = 1; }   // sivuttain seisova lapsi: käytä selkärangan normaalia
+  if (bl < 0.05 * u) { bx = ay; by = -ax; bl = 1; }
+  const tw = Math.max(tl * 0.72, 0.3 * u) / tl, bw = Math.max(bl * 1.45, 0.38 * u) / bl, d = 0.06 * u, e = 0.18 * u; // vartalo jatkuu lantion alle
+  const q = [
+    { x: smx - tx * tw + ax * d, y: smy - ty * tw + ay * d }, { x: smx + tx * tw + ax * d, y: smy + ty * tw + ay * d },
+    { x: hmx + bx * bw + ax * e, y: hmy + by * bw + ay * e }, { x: hmx - bx * bw + ax * e, y: hmy - by * bw + ay * e },
+  ];
+  let area = 0;
+  for (let i = 0; i < 4; i++) { const p = q[i], n = q[(i + 1) % 4]; area += p.x * n.y - n.x * p.y; }
+  if (area < 0) q.reverse();   // selkä kameraan päin: pidä kiertosuunta
+  return q;
+}
+function chTorsoPath(c, q, r) { // nelikulmio, jonka kulmat on pyöristetty säteellä r ulospäin
+  c.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const p0 = q[(i + 3) % 4], p1 = q[i], p2 = q[(i + 1) % 4];
+    c.arc(p1.x, p1.y, r, Math.atan2(p1.y - p0.y, p1.x - p0.x) - PI / 2, Math.atan2(p2.y - p1.y, p2.x - p1.x) - PI / 2);
+  }
+  c.closePath();
+}
+function chShoe(c, knee, ankle, side, u, col, dark, ch, ow, letters) {
+  let dx = ankle.x - knee.x, dy = ankle.y - knee.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+  const ang = clamp(Math.atan2(-dx, dy), -1.2, 1.2) * 0.5, rx = 0.4 * u, ry = 0.235 * u; // kenkä kääntyy puoliksi säären mukana
+  c.save(); c.translate(ankle.x + dx * 0.1 * u + side * 0.07 * u, ankle.y + dy * 0.1 * u); c.rotate(ang);
+  const p = () => { c.beginPath(); c.ellipse(0, 0, rx, ry, 0, PI, TAU); c.ellipse(0, 0, rx, ry * 0.82, 0, 0, PI); c.closePath(); };
+  celFill(c, p, col, dark, -0.04 * u, -0.05 * u, () => { c.fillStyle = K.cuff; c.fillRect(-rx, ry * 0.44, rx * 2, ry); }); // vaalea pohja
+  p(); c.strokeStyle = K.line; c.lineWidth = ow; c.stroke();
+  if (letters) { c.fillStyle = '#fff'; c.font = font(700, 0.25 * u); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(ch, side * 0.02 * u, -0.035 * u); }
+  c.restore();
+}
+function chGlove(c, e, w, side, u, col, dark, ch, ow, ext) {
+  let dx = w.x - e.x, dy = w.y - e.y; const fl = Math.hypot(dx, dy) || 1;
+  const px = w.x + dx * ext, py = w.y + dy * ext;   // kämmenen keskipiste = käden osumapiste pelissä
+  dx /= fl; dy /= fl;
+  c.save(); c.translate(w.x - dx * 0.1 * u, w.y - dy * 0.1 * u); c.rotate(Math.atan2(dy, dx)); // ranneke
+  rr(c, -0.085 * u, -0.225 * u, 0.17 * u, 0.45 * u, 0.07 * u); c.fillStyle = K.cuff; c.fill(); c.strokeStyle = K.line; c.lineWidth = ow; c.stroke();
+  c.restore();
+  const tx = side > 0 ? dy : -dy, ty = side > 0 ? -dx : dx; // peukalo: alas roikkuessa ulospäin, ylhäällä sisäänpäin
+  c.beginPath(); c.arc(px + tx * 0.3 * u - dx * 0.06 * u, py + ty * 0.3 * u - dy * 0.06 * u, 0.135 * u, 0, TAU);
+  c.fillStyle = col; c.fill(); c.strokeStyle = K.line; c.lineWidth = ow; c.stroke();
+  const p = () => { c.beginPath(); c.arc(px, py, 0.33 * u, 0, TAU); };
+  celFill(c, p, col, dark, -0.045 * u, -0.06 * u);
+  p(); c.strokeStyle = K.line; c.lineWidth = ow; c.stroke();
+  c.beginPath(); c.arc(px, py, 0.24 * u, PI * 1.08, PI * 1.42); c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = 0.05 * u; c.stroke();
+  c.fillStyle = '#fff'; c.font = font(700, 0.4 * u); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(ch, px, py + 0.03 * u);
+}
+function chHead(c, nose, el, er, u, st, ow) {
+  if (er.x < el.x) { const t = el; el = er; er = t; }
+  const earW = Math.max(0.2 * u, Math.hypot(er.x - el.x, er.y - el.y));
+  const tilt = clamp(Math.atan2(er.y - el.y, er.x - el.x), -0.5, 0.5);
+  const look = clamp((nose.x - (el.x + er.x) / 2) / earW * 2, -1, 1);   // pään kääntö siirtää kasvoja
+  const mood = st.mood || 0, oops = st.oops || 0, blink = st.blink || 0, sq = st.stretch || 0, bob = st.bob || ZERO, hu = u * HEAD, lw = ow / hu;
+  c.save();
+  c.translate(nose.x, nose.y - HEAD_UP * u); c.rotate(tilt); c.scale(hu, hu);      // tästä eteenpäin pään säde = 0.74
+  c.translate(0, 0.7); c.scale(1 - sq * 0.55, 1 + sq); c.translate(0, -0.7);       // venytys leuan suhteen
+  c.strokeStyle = K.line; c.lineWidth = lw;
+
+  if (!st.noBob) { // tupsu: joustava varsi ja minttupallo, heilahtaa liikkeen mukana
+    const bx = bob.x, by = -1.12 + bob.y;
+    c.beginPath(); c.moveTo(0, -0.66); c.quadraticCurveTo(bx * 0.15, -0.95, bx, by);
+    c.lineWidth = 0.1 + lw * 2; c.stroke(); c.strokeStyle = K.shade; c.lineWidth = 0.1; c.stroke();
+    const bp = () => { c.beginPath(); c.arc(bx, by, 0.15, 0, TAU); };
+    celFill(c, bp, K.bob, K.bobD, -0.03, -0.04);
+    bp(); c.strokeStyle = K.line; c.lineWidth = lw; c.stroke();
+    c.beginPath(); c.arc(bx, by, 0.095, PI * 1.1, PI * 1.45); c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 0.035; c.stroke();
+    c.strokeStyle = K.line; c.lineWidth = lw;
+  }
+  for (const sx of [-1, 1]) { // korvat
+    const ep = () => { c.beginPath(); c.arc(sx * 0.55, -0.57, 0.24, 0, TAU); };
+    celFill(c, ep, K.body, K.shade, -0.03, -0.04); ep(); c.stroke();
+    c.beginPath(); c.arc(sx * 0.57, -0.59, 0.115, 0, TAU); c.fillStyle = K.shade; c.fill();
+  }
+  const hp = () => { c.beginPath(); c.arc(0, 0, 0.74, 0, TAU); }; // pää
+  celFill(c, hp, K.body, K.shade, -0.05, -0.07, () => {
+    c.beginPath(); c.ellipse(-0.33, -0.41, 0.2, 0.1, -0.65, 0, TAU); c.fillStyle = 'rgba(255,246,205,0.65)'; c.fill();
+  });
+  hp(); c.stroke();
+
+  c.fillStyle = 'rgba(255,90,120,0.42)'; // posket
+  for (const sx of [-1, 1]) { c.beginPath(); c.ellipse(sx * 0.47 + look * 0.05, 0.2, 0.125, 0.085, 0, 0, TAU); c.fill(); }
+
+  const lx = clamp(st.lookX || 0, -1, 1), ly = clamp(st.lookY || 0, -1, 1);
+  for (const sx of [-1, 1]) { // silmät
+    const ex = sx * 0.27 + look * 0.07, ey = -0.09;
+    c.strokeStyle = K.line;
+    if (oops > 0.4) {                         // hups: > <
+      c.beginPath(); c.moveTo(ex + sx * 0.1, ey - 0.1); c.lineTo(ex - sx * 0.07, ey); c.lineTo(ex + sx * 0.1, ey + 0.1);
+      c.lineWidth = 0.075; c.stroke();
+    } else if (mood > 0.6) {                  // riemu: ∩ ∩
+      c.beginPath(); c.arc(ex, ey + 0.07, 0.15, PI * 1.14, PI * 1.86); c.lineWidth = 0.08; c.stroke();
+    } else {
+      const open = 1 - blink;
+      if (open < 0.25) { c.beginPath(); c.arc(ex, ey - 0.06, 0.15, PI * 0.16, PI * 0.84); c.lineWidth = 0.075; c.stroke(); }
+      else {
+        const ep = () => { c.beginPath(); c.ellipse(ex, ey, 0.155, 0.205 * open, 0, 0, TAU); };
+        ep(); c.fillStyle = '#fff'; c.fill();
+        c.save(); ep(); c.clip();
+        const px = ex + look * 0.05 + lx * 0.045, py = ey + 0.02 + ly * 0.05;
+        c.beginPath(); c.arc(px, py, 0.1, 0, TAU); c.fillStyle = K.line; c.fill();
+        c.fillStyle = '#fff';
+        c.beginPath(); c.arc(px + 0.035, py - 0.045, 0.034, 0, TAU); c.fill();
+        c.beginPath(); c.arc(px - 0.035, py + 0.04, 0.016, 0, TAU); c.fill();
+        c.restore();
+        ep(); c.lineWidth = lw; c.stroke();
+      }
+    }
+  }
+  const mx = look * 0.06; // suu
+  c.strokeStyle = K.line;
+  if (oops > 0.4) {
+    c.beginPath(); c.ellipse(mx, 0.36, 0.075, 0.09, 0, 0, TAU); c.fillStyle = K.mouth; c.fill(); c.lineWidth = lw; c.stroke();
+  } else if (mood > 0.15) {
+    const w = 0.2 + 0.05 * mood, d = 0.1 + 0.3 * mood, y0 = 0.25;
+    const mp = () => { c.beginPath(); c.moveTo(mx - w, y0); c.quadraticCurveTo(mx, y0 + 0.05, mx + w, y0);
+      c.bezierCurveTo(mx + w * 0.95, y0 + d * 1.25, mx - w * 0.95, y0 + d * 1.25, mx - w, y0); c.closePath(); };
+    mp(); c.fillStyle = K.mouth; c.fill();
+    c.save(); mp(); c.clip(); c.beginPath(); c.ellipse(mx, y0 + d * 1.02, w * 0.62, d * 0.42, 0, 0, TAU); c.fillStyle = K.tongue; c.fill(); c.restore();
+    mp(); c.lineWidth = lw; c.stroke();
+  } else { c.beginPath(); c.arc(mx, 0.17, 0.21, PI * 0.2, PI * 0.8); c.lineWidth = 0.07; c.stroke(); }
+  c.restore();
+}
+function drawCharacter(c, P, u, st) {
+  st = st || {};
+  const ow = 0.06 * u, ext = st.palmExt == null ? 0.35 : st.palmExt, letters = st.shoeLetters !== false;
+  const sl = P[LM.L_SHOULDER], sr = P[LM.R_SHOULDER], hl = P[LM.L_HIP], hr = P[LM.R_HIP];
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+  // jalat ja kengät (vartalon takana)
+  chLimb(c, hl, P[LM.L_KNEE], P[LM.L_ANKLE], 0.42 * u, K.shade, null, ow);
+  chLimb(c, hr, P[LM.R_KNEE], P[LM.R_ANKLE], 0.42 * u, K.shade, null, ow);
+  chShoe(c, P[LM.L_KNEE], P[LM.L_ANKLE], -1, u, K.L, K.Ld, 'V', ow, letters);
+  chShoe(c, P[LM.R_KNEE], P[LM.R_ANKLE], 1, u, K.R, K.Rd, 'O', ow, letters);
+  // vartalo
+  const q = chTorsoQuad(sl, sr, hl, hr, u), tp = () => chTorsoPath(c, q, 0.5 * u);
+  const smx = (sl.x + sr.x) / 2, smy = (sl.y + sr.y) / 2, hmx = (hl.x + hr.x) / 2, hmy = (hl.y + hr.y) / 2;
+  celFill(c, tp, K.body, K.shade, -0.07 * u, -0.09 * u, () => {
+    c.beginPath(); c.ellipse(lerp(smx, hmx, 0.68), lerp(smy, hmy, 0.68), 0.47 * u, 0.62 * u, Math.atan2(hmy - smy, hmx - smx) - PI / 2, 0, TAU);
+    c.fillStyle = K.belly; c.fill();
+  });
+  tp(); c.strokeStyle = K.line; c.lineWidth = ow; c.stroke();
+  // käsivarret + olkasauman peitto, jotta käsi kasvaa vartalosta ilman rengasta
+  chLimb(c, sl, P[LM.L_ELBOW], P[LM.L_WRIST], 0.33 * u, K.body, 'rgba(255,240,190,0.3)', ow);
+  chLimb(c, sr, P[LM.R_ELBOW], P[LM.R_WRIST], 0.33 * u, K.body, 'rgba(255,240,190,0.3)', ow);
+  c.save(); tp(); c.clip(); c.fillStyle = K.body;
+  c.beginPath(); c.arc(sl.x, sl.y, 0.165 * u + ow * 1.15, 0, TAU); c.fill();
+  c.beginPath(); c.arc(sr.x, sr.y, 0.165 * u + ow * 1.15, 0, TAU); c.fill();
+  c.restore();
+  // pää, ja hanskat aina päällimmäisinä (ne ovat pelin osumapisteet)
+  chHead(c, P[LM.NOSE], P[LM.L_EAR], P[LM.R_EAR], u, st, ow);
+  chGlove(c, P[LM.L_ELBOW], P[LM.L_WRIST], -1, u, K.L, K.Ld, 'V', ow, ext);
+  chGlove(c, P[LM.R_ELBOW], P[LM.R_WRIST], 1, u, K.R, K.Rd, 'O', ow, ext);
+  c.restore();
+}
+function drawCharacterShadow(c, P, u, floorY) {
+  const hx = (P[LM.L_HIP].x + P[LM.R_HIP].x) / 2, feet = Math.max(P[LM.L_ANKLE].y, P[LM.R_ANKLE].y) + 0.3 * u;
+  const gap = clamp((floorY - feet) / (2.5 * u), 0, 1);
+  c.fillStyle = `rgba(14,6,40,${(0.42 - gap * 0.24).toFixed(3)})`;
+  c.beginPath(); c.ellipse(hx, floorY, u * (1.2 - gap * 0.5), u * (0.2 - gap * 0.08), 0, 0, TAU); c.fill();
+}
+// Hahmon "elämä": räpäytys, ilme, tupsun jousi ja pään venytys lasketaan liikkeestä. Tila annetaan drawCharacterille.
+class CharacterRig {
+  constructor() { this.reset(); }
+  reset() {
+    this.blinkIn = 1.6; this.blinkT = 0; this.mood = 0; this.oops = 0; this.prev = null; this.vx = 0; this.vy = 0;
+    this.bx = 0; this.by = 0; this.bvx = 0; this.bvy = 0; this.str = 0; this.strV = 0;
+    this.state = { blink: 0, mood: 0, oops: 0, stretch: 0, bob: { x: 0, y: 0 }, lookX: 0, lookY: 0 };
+  }
+  cheer(a) { this.mood = Math.max(this.mood, a == null ? 1 : a); }
+  oopsie(a) { this.oops = Math.max(this.oops, a == null ? 1 : a); }
+  update(P, u, dt) {
+    const n = P[LM.NOSE], s = this.state;
+    if (this.prev && dt > 0) { this.vx = clamp((n.x - this.prev.x) / dt / u, -12, 12); this.vy = clamp((n.y - this.prev.y) / dt / u, -12, 12); }
+    this.prev = { x: n.x, y: n.y };
+    // tupsu laahaa liikkeen perässä (jousi)
+    const tx = clamp(-this.vx * 0.04, -0.3, 0.3), ty = clamp(-this.vy * 0.03, -0.2, 0.22);
+    this.bvx += ((tx - this.bx) * 110 - this.bvx * 9) * dt; this.bx = clamp(this.bx + this.bvx * dt, -0.4, 0.4);
+    this.bvy += ((ty - this.by) * 110 - this.bvy * 9) * dt; this.by = clamp(this.by + this.bvy * dt, -0.25, 0.3);
+    // venytys nopeassa pystyliikkeessä; alivaimennettu jousi litistää alastulossa
+    const ts = RM ? 0 : clamp(Math.abs(this.vy) * 0.016, 0, 0.1);
+    this.strV += ((ts - this.str) * 170 - this.strV * 12) * dt; this.str = clamp(this.str + this.strV * dt, -0.1, 0.12);
+    this.mood = Math.max(0, this.mood - dt * 0.9); this.oops = Math.max(0, this.oops - dt * 1.1);
+    this.blinkIn -= dt;
+    if (this.blinkIn <= 0) { this.blinkT = 0.16; this.blinkIn = 2 + Math.random() * 3; }
+    this.blinkT = Math.max(0, this.blinkT - dt);
+    s.blink = this.blinkT > 0 ? Math.sin(PI * (1 - this.blinkT / 0.16)) : 0;
+    s.mood = this.mood; s.oops = this.oops; s.stretch = this.str; s.bob.x = this.bx; s.bob.y = this.by;
+    s.lookY = clamp(this.vy * 0.15, -1, 1);
+  }
+}
+
+// ───────────────────────── 7. Asennot (esittelyä varten) ─────────────────────────
+// Pelissä pisteet tulevat kamerasta. Tässä ne tuotetaan pienellä luurangolla, mittayksikkö = hartialeveys.
+const SK = { hip: 0.6, torso: 1.42, ua: 0.7, fa: 0.66, th: 0.98, sh: 0.94, ank: 0.3, neck: 0.64 };
+const poseDefaults = () => ({ elev: 0, squat: 0, bob: 0, lean: 0, sway: 0, tilt: 0, breath: 0, spread: 0.42,
+  aL1: 0.2, aL2: 0.08, aR1: 0.2, aR2: 0.08, liftL: 0, liftR: 0, headTilt: 0, headTurn: 0 }); // käsikulmat: 0 = alas, π = ylös
+function ik(ax, ay, cx, cy, l1, l2, side, bulge) { // kahden luun nivel (polvi), taipuu sivulle "side"
+  let dx = cx - ax, dy = cy - ay; const d = Math.hypot(dx, dy) || 1e-6;
+  const dd = clamp(d, Math.abs(l1 - l2) + 1e-3, l1 + l2 - 1e-3);
+  const a = (l1 * l1 - l2 * l2 + dd * dd) / (2 * dd), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  dx /= d; dy /= d;
+  let px = -dy, py = dx; if (px * side < 0) { px = -px; py = -py; }
+  return { x: ax + dx * d * (a / dd) + px * h * bulge, y: ay + dy * d * (a / dd) + py * h * bulge };
+}
+function buildPose(p, cx, gy, u) { // → 33 pistettä ruudulla; (cx, gy) = jalkojen välinen kohta lattialla
+  const P = new Array(33), S = SK;
+  const pt = (i, x, y) => { P[i] = { x: cx + x * u, y: gy + y * u }; };
+  const legLen = (S.th + S.sh) * 0.992, off = p.spread - S.hip / 2;
+  const hipH = S.ank + Math.sqrt(Math.max(0.04, legLen * legLen - off * off));
+  const hx = p.sway, hy = -(hipH - p.squat * 0.82 - p.bob) - p.elev;
+  const hlx = hx - S.hip / 2, hrx = hx + S.hip / 2;
+  const alx = -p.spread, aly = -(S.ank + p.liftL) - p.elev, arx = p.spread, ary = -(S.ank + p.liftR) - p.elev;
+  const kl = ik(hlx, hy, alx, aly, S.th, S.sh, -1, 0.55), kr = ik(hrx, hy, arx, ary, S.th, S.sh, 1, 0.55);
+  pt(23, hlx, hy); pt(24, hrx, hy); pt(25, kl.x, kl.y); pt(26, kr.x, kr.y); pt(27, alx, aly); pt(28, arx, ary);
+  pt(29, alx + 0.03, aly + 0.14); pt(30, arx - 0.03, ary + 0.14); pt(31, alx - 0.12, aly + 0.2); pt(32, arx + 0.12, ary + 0.2);
+  const tl = S.torso * (1 + p.breath), smx = hx + Math.sin(p.lean) * tl, smy = hy - Math.cos(p.lean) * tl;
+  const sa = p.lean + p.tilt, sdx = Math.cos(sa) * 0.5, sdy = Math.sin(sa) * 0.5;
+  pt(11, smx - sdx, smy - sdy); pt(12, smx + sdx, smy + sdy);
+  const arm = (sx, sy, s, a1, a2, iE, iW, iA, iB, iC) => {
+    const ex = sx + s * Math.sin(a1) * S.ua, ey = sy + Math.cos(a1) * S.ua, dx = s * Math.sin(a2), dy = Math.cos(a2);
+    const wx = ex + dx * S.fa, wy = ey + dy * S.fa;
+    pt(iE, ex, ey); pt(iW, wx, wy);
+    pt(iA, wx + dx * 0.2 + dy * 0.06, wy + dy * 0.2 - dx * 0.06); pt(iB, wx + dx * 0.24 - dy * 0.05, wy + dy * 0.24 + dx * 0.05); pt(iC, wx + dx * 0.1 - dy * 0.1, wy + dy * 0.1 + dx * 0.1);
+  };
+  arm(smx - sdx, smy - sdy, -1, p.aL1, p.aL2, 13, 15, 17, 19, 21);
+  arm(smx + sdx, smy + sdy, 1, p.aR1, p.aR2, 14, 16, 18, 20, 22);
+  const na = p.lean + p.headTilt * 0.4, nx = smx + Math.sin(na) * S.neck + p.headTurn * 0.1, ny = smy - Math.cos(na) * S.neck;
+  const hr = p.lean * 0.5 + p.headTilt, cr = Math.cos(hr), sn = Math.sin(hr), tn = p.headTurn * 0.08;
+  const hp = (i, x, y) => pt(i, nx + x * cr - y * sn, ny + x * sn + y * cr);
+  hp(0, 0, 0); hp(7, -0.3 - tn, -0.03); hp(8, 0.3 - tn, -0.03);
+  hp(1, -0.06, -0.1); hp(2, -0.11, -0.11); hp(3, -0.16, -0.1); hp(4, 0.06, -0.1); hp(5, 0.11, -0.11); hp(6, 0.16, -0.1);
+  hp(9, -0.07, 0.1); hp(10, 0.07, 0.1);
+  return P;
+}
+function poseIdle(t) { // lepo: hengitys, pieni huojunta, katse kiertää
+  const p = poseDefaults(), b = Math.sin(t * 2.3);
+  p.breath = 0.012 * b; p.bob = 0.01 * (1 - b); p.aL1 = p.aR1 = 0.2 + 0.03 * b;
+  p.sway = 0.025 * Math.sin(t * 0.8); p.headTilt = 0.035 * Math.sin(t * 0.9 + 1); p.headTurn = 0.3 * Math.sin(t * 0.5);
+  return p;
+}
+function applyWave(p, t, w) { // vilkutus oikealla kädellä
+  p.aR1 = lerp(p.aR1, 2.05, w); p.aR2 = lerp(p.aR2, 2.78 + 0.4 * Math.sin(t * 10.5), w);
+  p.headTilt += 0.1 * w; p.tilt -= 0.06 * w; p.sway -= 0.04 * w;
+}
+function applySquat(p, s) {
+  p.squat += 0.85 * s; p.spread += 0.08 * s;
+  p.aL1 = p.aR1 = lerp(p.aL1, 1.35, s); p.aL2 = p.aR2 = lerp(p.aL2, 1.5, s);
+}
+function applyRun(p, ph, k) { // hölkkä paikallaan: vuorojalat, vastakkainen käsi
+  const s = Math.sin(ph);
+  p.liftL += 0.5 * k * Math.max(0, s); p.liftR += 0.5 * k * Math.max(0, -s);
+  p.elev += 0.06 * k * Math.abs(s); p.sway += 0.035 * k * s; p.tilt += 0.05 * k * s; p.headTilt -= 0.04 * k * s;
+  p.aL1 = lerp(p.aL1, 0.26, k); p.aR1 = lerp(p.aR1, 0.26, k);
+  p.aL2 = lerp(p.aL2, 1.25 - 0.75 * s, k); p.aR2 = lerp(p.aR2, 1.25 + 0.75 * s, k);
+}
+// Käsikirjoitettu hyppy: peli käynnistää koko kaaren, kun hyppy tunnistetaan.
+// Vaiheet: ponnistus (litistys) → ilma (venytys, polvet koukkuun, kädet ylös) → alastulo (litistys).
+const J = { ant: 0.16, air: 0.58, land: 0.24, H: 1.9 }; J.total = J.ant + J.air + J.land;
+function jumpState(tau) {
+  if (tau < 0 || tau >= J.total) return null;
+  const o = { elev: 0, squat: 0, tuck: 0, arms: 0, wind: 0, phase: 'ant' };
+  if (tau < J.ant) { const k = tau / J.ant; o.squat = 0.42 * Math.sin(PI * Math.pow(k, 1.6)); o.wind = Math.sin(PI * k); }
+  else if (tau < J.ant + J.air) {
+    const q = (tau - J.ant) / J.air; o.phase = 'air';
+    o.elev = J.H * 4 * q * (1 - q); o.tuck = 0.4 * Math.pow(Math.max(0, Math.sin(PI * q)), 1.5);
+    o.arms = Math.min(E.outCubic(q * 2.6), 1 - 0.5 * E.inCubic(seg(q, 0.7, 1)));
+  } else { const k = (tau - J.ant - J.air) / J.land; o.phase = 'land'; o.squat = 0.38 * Math.sin(PI * Math.pow(k, 0.6)); o.arms = 0.5 * (1 - E.outCubic(k)); }
+  return o;
+}
+function applyJump(p, js) {
+  p.elev += js.elev; p.squat += js.squat; p.liftL += js.tuck; p.liftR += js.tuck;
+  p.aL1 = p.aR1 = lerp(p.aL1, 2.55, js.arms) + 0.3 * js.wind;
+  p.aL2 = lerp(p.aL2, 2.9, js.arms) - 0.2 * js.wind; p.aR2 = lerp(p.aR2, 2.9, js.arms) - 0.2 * js.wind;
+}
+// Jaksottainen kello pienille esittelysilmukoille
+function cyc(o, dt, len) { o.pc = o.ct; o.ct += dt; if (o.ct >= len) { o.ct -= len; o.pc = -1; } }
+const hitAt = (o, at) => o.pc < at && o.ct >= at;
+
+// ───────────────────────── 8. Käyttöliittymän osat ─────────────────────────
+const PANEL = 'rgba(18,10,48,0.66)', PANEL_LINE = 'rgba(255,244,214,0.18)';
+function uiButton(x, y, w, h, label, kind, press, hover) {
+  const D = h * 0.12, off = D * 0.8 * press, r = h / 2, prim = kind === 'primary';
+  ctx.save();
+  if (hover > 0) { // kohdistus: pehmeä hehku ja pieni kasvu
+    ctx.translate(x + w / 2, y + h / 2); ctx.scale(1 + 0.025 * hover, 1 + 0.025 * hover); ctx.translate(-x - w / 2, -y - h / 2);
+    rr(ctx, x - 11, y - 11, w + 22, h + D + 22, 999); ctx.strokeStyle = `rgba(255,244,214,${(0.9 * sat(hover)).toFixed(3)})`;   // kohdistuskehä
+    ctx.lineWidth = 5; ctx.stroke();
+  }
+  ctx.lineJoin = 'round'; ctx.strokeStyle = C.viiva; ctx.lineWidth = OUT;
+  rr(ctx, x, y + D, w, h, r); ctx.fillStyle = prim ? C.keltSyva : '#22145E'; ctx.fill(); ctx.stroke();          // reuna
+  const fy = y + off, g = ctx.createLinearGradient(0, fy, 0, fy + h);
+  if (prim) { g.addColorStop(0, '#FFDA66'); g.addColorStop(1, press > 0.5 ? '#F5B72E' : C.kelt); }
+  else { g.addColorStop(0, '#5843C9'); g.addColorStop(1, '#4330AE'); }
+  rr(ctx, x, fy, w, h, r); ctx.fillStyle = g; ctx.fill();
+  ctx.save(); ctx.clip(); ctx.fillStyle = prim ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)';              // kiilto
+  ctx.beginPath(); ctx.ellipse(x + w / 2, fy, w * 0.62, h * 0.42, 0, 0, TAU); ctx.fill(); ctx.restore();
+  rr(ctx, x, fy, w, h, r); ctx.stroke();
+  ctext(label, x + w / 2, fy + h / 2, h * 0.42, prim ? C.viiva : C.kerma, 600);
+  ctx.restore();
+}
+function uiScore(x, y, val, popT) { // pistelaskuri: tähti + luku, ponnahtaa kun luku kasvaa
+  const w = 236, h = 92, pop = 1 + (RM ? 0.15 : 0.45) * (1 - E.outElastic(popT / 0.55));
+  rr(ctx, x, y, w, h, h / 2); ctx.fillStyle = PANEL; ctx.fill(); ctx.strokeStyle = PANEL_LINE; ctx.lineWidth = 3; ctx.stroke();
+  drawStar(ctx, x + 54, y + h / 2, 27 * (1 + (pop - 1) * 0.6), -0.1, 4);
+  ctx.save(); ctx.translate(x + 152, y + h / 2); ctx.scale(pop, pop); ctext(String(val), 0, 0, 58, C.kerma, 700); ctx.restore();
+}
+function uiTime(x, y, w, h, frac, t) { // aikapalkki: kello + minttu palkki, lopussa keltainen ja sykkii
+  rr(ctx, x, y, w, h, h / 2); ctx.fillStyle = PANEL; ctx.fill(); ctx.strokeStyle = PANEL_LINE; ctx.lineWidth = 3; ctx.stroke();
+  const cx = x + h / 2 + 2, cy = y + h / 2, r = h * 0.25;
+  ctx.strokeStyle = C.kerma; ctx.lineWidth = h * 0.08; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.moveTo(cx, cy - r * 0.55); ctx.lineTo(cx, cy); ctx.lineTo(cx + r * 0.42, cy + r * 0.24); ctx.stroke();
+  const bx = x + h + 2, bh = h * 0.42, by = y + (h - bh) / 2, bw = w - h - 2 - h * 0.34, low = frac < 0.25;
+  rr(ctx, bx, by, bw, bh, bh / 2); ctx.fillStyle = 'rgba(255,244,214,0.14)'; ctx.fill();
+  const fw = Math.max(bh, bw * sat(frac));
+  ctx.globalAlpha = low && !RM ? 0.72 + 0.28 * Math.sin(t * 9) : 1;
+  rr(ctx, bx, by, fw, bh, bh / 2); ctx.fillStyle = low ? C.kelt : C.minttu; ctx.fill();
+  ctx.globalAlpha = 1;
+  rr(ctx, bx + bh * 0.35, by + bh * 0.18, Math.max(0, fw - bh * 0.7), bh * 0.2, bh * 0.1); ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fill();
+}
+function gloveAt(x, y, u, side, ang) { // irrallinen hanska (osoitin, tehosteet): (x, y) = kämmenen keskipiste
+  const dx = Math.cos(ang), dy = Math.sin(ang), fl = SK.fa * u;
+  const w = { x: x - dx * fl * 0.35, y: y - dy * fl * 0.35 }, e = { x: w.x - dx * fl, y: w.y - dy * fl };
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  chGlove(ctx, e, w, side, u, side > 0 ? K.R : K.L, side > 0 ? K.Rd : K.Ld, side > 0 ? 'O' : 'V', 0.06 * u, 0.35);
+  ctx.restore();
+}
+function slideHeader(n, title) {
+  ctx.beginPath(); ctx.arc(120, 98, 30, 0, TAU); ctx.fillStyle = C.minttu; ctx.fill();
+  ctext(String(n), 120, 98, 34, C.viiva, 700);
+  txt(title, 170, 119, 58, C.kerma, 700);
+}
+const label = (s, x, y) => txt(s, x, y, 26, C.laventeli, 600);
+function panel(x, y, w, h, r) {
+  rr(ctx, x, y, w, h, r || 36); ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,244,214,0.12)'; ctx.lineWidth = 2.5; ctx.stroke();
+}
+
+// ───────────────────────── 9. Diat ─────────────────────────
+// ── Dia 1: logo ──
+// Kirjaimet piirretään kerran omille piirtopinnoilleen (ääriviiva, punainen syvyys, liukuväri, kiilto)
+// ja animoidaan sen jälkeen kuvina. Rakennetaan uudelleen, kun koko tai fontti muuttuu.
+const LOGO = { str: 'Pomp!', size: 330, key: '', sp: [], width: 0 };
+function buildLogo() {
+  const px = Math.max(8, LOGO.size * view.s * view.dpr), key = px.toFixed(2) + '/' + fontVer;
+  if (key === LOGO.key) return;
+  LOGO.key = key; LOGO.sp = [];
+  const k = px / LOGO.size, pad = Math.ceil(px * 0.14), depth = px * 0.085, asc = px * 0.82, desc = px * 0.3;
+  const m = document.createElement('canvas').getContext('2d'); m.font = font(700, px);
+  let x = 0;
+  for (const ch of LOGO.str) {
+    const adv = m.measureText(ch).width, cw = Math.ceil(adv + pad * 2), chh = Math.ceil(pad * 2 + asc + desc + depth), by = pad + asc;
+    const a = document.createElement('canvas'), b = document.createElement('canvas');
+    a.width = b.width = cw; a.height = b.height = chh;
+    const g = a.getContext('2d'), f = b.getContext('2d');
+    g.font = f.font = font(700, px); g.textBaseline = f.textBaseline = 'alphabetic'; g.lineJoin = 'round';
+    g.strokeStyle = C.viiva; g.lineWidth = px * 0.075;                        // 1) ääriviiva ja syvyyden siluetti
+    const step = Math.max(1, depth / 16);
+    for (let d = depth; d > 0; d -= step) g.strokeText(ch, pad, by + d);
+    g.strokeText(ch, pad, by);
+    g.fillStyle = C.oikea;                                                     // 2) syvyys
+    for (let d = depth; d > 0; d -= step * 0.5) g.fillText(ch, pad, by + d);
+    const gr = f.createLinearGradient(0, by - px * 0.72, 0, by + px * 0.22);   // 3) pinta ja kiilto
+    gr.addColorStop(0, '#FFE27A'); gr.addColorStop(0.5, C.kelt); gr.addColorStop(1, '#FFB52E');
+    f.fillStyle = gr; f.fillText(ch, pad, by);
+    f.globalCompositeOperation = 'source-atop'; f.fillStyle = 'rgba(255,255,255,0.3)';
+    f.beginPath(); f.ellipse(cw * 0.4, by - px * 0.58, cw * 0.8, px * 0.26, -0.12, 0, TAU); f.fill();
+    g.drawImage(b, 0, 0);
+    LOGO.sp.push({ cv: a, x: x / k, adv: adv / k, w: cw / k, h: chh / k, pad: pad / k, by: by / k });
+    x += adv - px * 0.012;
+  }
+  LOGO.width = x / k;
+}
+function logoAnim(i, t) { // sisääntulo ponnahtaen, sen jälkeen kirjaimet hyppäävät vuorotellen (o korkeimmalle)
+  const k = (t - 0.15 - i * 0.1) / 0.9, sc = k <= 0 ? 0 : RM ? E.outCubic(k * 2) : E.outElastic(k);
+  let y = 0, sy = 1;
+  const tt = t - 2.0 - i * 0.12;
+  if (tt >= 0) {
+    const q = (tt % 3.6) / 0.78;
+    if (q < 1) {
+      const H = (i === 1 ? 120 : 64) * (RM ? 0.25 : 1);
+      if (q < 0.16) sy = 1 - 0.15 * Math.sin(PI * q / 0.16);
+      else if (q < 0.82) { const b = (q - 0.16) / 0.66, s = Math.max(0, Math.sin(PI * b)); y = -H * s; sy = 1 + 0.1 * Math.sqrt(s) * Math.abs(Math.cos(PI * b)); }
+      else { const c = (q - 0.82) / 0.18; sy = 1 - 0.17 * Math.sin(PI * c) * (1 - c * 0.4); }
+      if (RM) sy = 1;
+    }
+  }
+  return { sc, y, sy, sx: 1 + (1 - sy) * 0.7 };
+}
+const s1 = {
+  name: 'Logo', t: 0,
+  enter() { this.t = 0; },
+  update(dt) { this.t += dt; },
+  draw() {
+    const t = this.t, baseY = 500, floorY = baseY + 110;
+    buildLogo();
+    const x0 = (DW - LOGO.width) / 2;
+    ctx.save(); ctx.translate(DW / 2, floorY); ctx.scale(1, 0.15);                // lattian hehku
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 620);
+    g.addColorStop(0, 'rgba(128,104,255,0.34)'); g.addColorStop(1, 'rgba(128,104,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 620, 0, TAU); ctx.fill(); ctx.restore();
+    const an = LOGO.sp.map((sp, i) => logoAnim(i, t));
+    LOGO.sp.forEach((sp, i) => {                                                  // varjot lattialla
+      const a = an[i], lift = sat(-a.y / 260);
+      ctx.fillStyle = `rgba(12,5,36,${(0.4 * a.sc * (1 - lift * 0.6)).toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(x0 + sp.x + sp.adv / 2, floorY, Math.max(0, sp.adv * 0.44 * Math.min(1, a.sc) * (1 - lift * 0.35)), 13, 0, 0, TAU); ctx.fill();
+    });
+    LOGO.sp.forEach((sp, i) => {
+      const a = an[i]; if (a.sc <= 0.001) return;
+      ctx.save(); ctx.translate(x0 + sp.x + sp.adv / 2, baseY + a.y); ctx.scale(a.sx * a.sc, a.sy * a.sc);
+      ctx.drawImage(sp.cv, -sp.adv / 2 - sp.pad, -sp.by, sp.w, sp.h); ctx.restore();
+    });
+    const sparks = [[x0 - 70, 300, 30, C.kerma, 0], [x0 + LOGO.width + 60, 330, 24, C.minttu, 2.1], [x0 + LOGO.width + 20, 560, 18, C.kerma, 4], [x0 - 30, 540, 20, C.kelt, 5.3]];
+    for (const [sx, sy, r, col, ph] of sparks) {                                  // muutama tuikkiva kipinä
+      const k = RM ? 0.7 : Math.pow(Math.max(0, Math.sin(t * 1.3 + ph)), 2) * seg(t, 1.2, 1.8);
+      if (k > 0.02) { sparklePath(ctx, sx, sy, r * k, t * 0.4 + ph); ctx.fillStyle = col; ctx.fill(); }
+    }
+    const e = E.outCubic(seg(t, 1.0, 1.6));
+    ctx.globalAlpha = e; ctext('Liikuntapeli, jota ohjataan koko keholla.', DW / 2, 706 + (1 - e) * 18, 42, C.kerma, 500);
+    ctx.globalAlpha = E.outCubic(seg(t, 1.3, 1.9)) * 0.9; ctext('Tyylilinjaus · visuaalinen suunta', DW / 2, 774, 27, C.laventeli, 600);
+    ctx.globalAlpha = 1;
+  },
+};
+
+// ── Dia 2: väripaletti ja typografia ──
+const SWATCHES = [
+  ['Yö', C.yo, 'Tausta'], ['Hämärä', C.yoVaalea, 'Pinnat, hehku'], ['Ääriviiva', C.viiva, 'Viivat ja varjot'], ['Kerma', C.kerma, 'Teksti'],
+  ['Keltainen', C.kelt, 'Hahmo, pääpainike'], ['Punainen', C.oikea, 'Aina oikea (O)'], ['Sininen', C.vasen, 'Aina vasen (V)'], ['Minttu', C.minttu, 'Onnistuminen'],
+];
+const TONES = [C.yoSyva, C.keltVarjo, C.keltValo, C.oikeaVarjo, C.vasenVarjo, C.minttuVarjo, C.laventeli];
+const s2 = {
+  name: 'Väripaletti ja typografia', t: 0,
+  enter() { this.t = 0; },
+  update(dt) { this.t += dt; },
+  draw() {
+    slideHeader(2, 'Väripaletti ja typografia');
+    SWATCHES.forEach(([nm, col, role], i) => {
+      const x = 90 + (i % 4) * 200, y = 172 + ((i / 4) | 0) * 262;
+      const e = RM ? 1 : E.outBack(seg(this.t, 0.05 + i * 0.05, 0.45 + i * 0.05));
+      ctx.save(); ctx.translate(x + 85, y + 75); ctx.scale(e, e);
+      rr(ctx, -85, -75, 170, 150, 36); ctx.fillStyle = col; ctx.fill();   // väri sellaisenaan, ei kiiltoa
+      ctx.strokeStyle = 'rgba(255,244,214,0.26)'; ctx.lineWidth = 3; ctx.stroke();
+      if (i === 5 || i === 6) ctext(i === 5 ? 'O' : 'V', 0, 0, 86, '#fff', 700);
+      ctx.restore();
+      txt(nm, x + 2, y + 188, 30, C.kerma, 600);
+      txt(role, x + 2, y + 217, 21, 'rgba(255,244,214,0.82)', 500);
+      txt(col.toUpperCase(), x + 2, y + 242, 19, C.laventeli, 500);
+    });
+    label('Varjo- ja valosävyt', 90, 728);
+    rr(ctx, 90, 744, 728, 54, 27); ctx.save(); ctx.clip();
+    TONES.forEach((col, i) => { ctx.fillStyle = col; ctx.fillRect(90 + i * 104, 744, 105, 54); });
+    ctx.restore();
+    rr(ctx, 90, 744, 728, 54, 27); ctx.strokeStyle = 'rgba(255,244,214,0.22)'; ctx.lineWidth = 3; ctx.stroke();
+    txt('Kirkkaat värit vain pelattaville asioille. Tausta pysyy violettina.', 90, 836, 24, 'rgba(255,244,214,0.85)', 500);
+
+    const X = 930; // typografia
+    label('Fredoka · pyöreä ja selkeä kaukaa', X, 192);
+    const rows = [['Otsikko · 700', 'Hyppää!', 96, 700, C.kerma, 322], ['Väliotsikko · 600', 'Valitse peli', 58, 600, C.kerma, 428],
+      ['Painike · 600', 'Aloita', 44, 600, C.kerma, 518], ['Leipäteksti · 500', 'Koko keho näkyviin päästä varpaisiin.', 31, 500, C.kerma, 600],
+      ['Numerot · 700', '0123456789', 64, 700, C.kelt, 708]];
+    for (const [cap, sample, size, w, col, y] of rows) {
+      txt(cap, X, y - size * 0.74 - 14, 20, C.laventeli, 500);
+      txt(sample, X, y, size, col, w);
+    }
+    ctx.fillStyle = 'rgba(255,244,214,0.14)'; ctx.fillRect(X, 748, 580, 3);
+    txt('Televisiossa teksti vähintään 28 px (1080p).', X, 796, 24, 'rgba(255,244,214,0.85)', 500);
+    txt('Lyhyet sanat, ei ohuita leikkauksia.', X, 832, 24, 'rgba(255,244,214,0.85)', 500);
+  },
+};
+
+// ── Dia 3: hahmo ──
+const s3 = {
+  name: 'Hahmo', t: 0, rig: new CharacterRig(), ps: new Particles(120), P: null, P2: null, mode: 'Lepo', phase: '',
+  seq: [['Lepo', 1.8], ['Vilkutus', 2.6], ['Lepo', 0.7], ['Hyppy', J.total], ['Lepo', 0.9], ['Kyykky', 1.9], ['Lepo', 0.5]],
+  CX: 520, GY: 748, U: 84,
+  enter() { this.t = 0; this.rig.reset(); this.ps.clear(); this.phase = ''; this.update(0); },
+  update(dt) {
+    this.t += dt;
+    const total = this.seq.reduce((a, s) => a + s[1], 0);
+    let tt = this.t % total, mode = 'Lepo', d = 1;
+    for (const [m, len] of this.seq) { if (tt < len) { mode = m; d = len; break; } tt -= len; }
+    this.mode = mode;
+    const p = poseIdle(this.t);
+    let phase = '';
+    if (mode === 'Vilkutus') { applyWave(p, tt, smooth(tt / 0.4) * (1 - smooth((tt - (d - 0.45)) / 0.45))); this.rig.cheer(0.5); }
+    else if (mode === 'Kyykky') { applySquat(p, smooth(tt / 0.45) * (1 - smooth((tt - (d - 0.5)) / 0.5))); this.rig.cheer(0.25); }
+    else if (mode === 'Hyppy') { const js = jumpState(tt); if (js) { applyJump(p, js); phase = js.phase; if (phase === 'air') this.rig.cheer(1); } }
+    if (phase !== this.phase) { // hyppypöly ja tähdet
+      if (phase === 'air') { fxDust(this.ps, this.CX, this.GY, 1.3, 6, 1); fxStars(this.ps, this.CX, this.GY - 20, 1.3, 5); }
+      if (phase === 'land') fxDust(this.ps, this.CX, this.GY, 1.4, 8, 1.3);
+      this.phase = phase;
+    }
+    this.P = buildPose(p, this.CX, this.GY, this.U);
+    this.P2 = buildPose(p, 1392, 486, 42);
+    this.rig.update(this.P, this.U, dt);
+    this.ps.update(dt);
+  },
+  draw() {
+    slideHeader(3, 'Hahmo');
+    const { CX, GY, U, P, P2 } = this;
+    ctx.save(); ctx.translate(CX, GY + 4); ctx.scale(1, 0.14);                      // valokeila lattialla
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 380);
+    g.addColorStop(0, 'rgba(150,128,255,0.30)'); g.addColorStop(1, 'rgba(150,128,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 380, 0, TAU); ctx.fill(); ctx.restore();
+    drawCharacterShadow(ctx, P, U, GY);
+    this.ps.draw(ctx);
+    drawCharacter(ctx, P, U, this.rig.state);
+
+    ['Lepo', 'Vilkutus', 'Hyppy', 'Kyykky'].forEach((m, i) => {                     // asennon nimi
+      const x = 176 + i * 174, on = m === this.mode;
+      rr(ctx, x, 784, 162, 54, 27); ctx.fillStyle = on ? C.kelt : 'rgba(255,255,255,0.07)'; ctx.fill();
+      if (!on) { ctx.strokeStyle = 'rgba(255,244,214,0.16)'; ctx.lineWidth = 2.5; ctx.stroke(); }
+      ctext(m, x + 81, 811, 27, on ? C.viiva : 'rgba(255,244,214,0.7)', 600);
+    });
+
+    // oikea palsta: sama asento nivelpisteinä
+    panel(960, 168, 550, 352);
+    label('Kameran 33 nivelpistettä', 990, 214);
+    [['Raajat', 'seuraavat niveliä'], ['Pää', 'seuraa nenää ja korvia'], ['Koko', 'tulee hartialeveydestä']].forEach(([a, b], i) => {
+      const y = 290 + i * 66;
+      txt(a, 990, y, 28, C.kerma, 600); txt(b, 990, y + 28, 22, C.laventeli, 500);
+    });
+    ctx.fillStyle = 'rgba(14,6,40,0.4)'; ctx.beginPath(); ctx.ellipse(1392, 490, 66, 9, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,244,214,0.5)'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const bones = [[11, 12], [11, 23], [12, 24], [23, 24], [11, 13], [13, 15], [12, 14], [14, 16], [23, 25], [25, 27], [24, 26], [26, 28], [7, 0], [0, 8], [27, 31], [28, 32]];
+    ctx.beginPath(); for (const [a, b] of bones) { ctx.moveTo(P2[a].x, P2[a].y); ctx.lineTo(P2[b].x, P2[b].y); } ctx.stroke();
+    for (let i = 0; i < 33; i++) {
+      const main = i === 0 || i === 7 || i === 8 || (i >= 11 && i <= 16) || (i >= 23 && i <= 28);
+      const isR = i === 16 || i === 28, isL = i === 15 || i === 27;
+      ctx.fillStyle = isR ? C.oikea : isL ? C.vasen : C.minttu; ctx.globalAlpha = main ? 1 : 0.55;
+      ctx.beginPath(); ctx.arc(P2[i].x, P2[i].y, isR || isL ? 8.5 : main ? 6 : 3, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    panel(960, 544, 550, 288);
+    label('Ilmeet', 990, 590);
+    const faces = [['Hymy', { blink: this.rig.state.blink, noBob: false }], ['Riemu', { mood: 1 }], ['Hups', { oops: 1 }]];
+    faces.forEach(([nm, st], i) => {
+      const x = 1068 + i * 168, y = 716, u = 56;
+      ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      chHead(ctx, { x, y: y + HEAD_UP * u }, { x: x - 0.3 * u, y: y + 0.17 * u }, { x: x + 0.3 * u, y: y + 0.17 * u }, u, st, 0.06 * u);
+      ctx.restore();
+      ctext(nm, x, 798, 25, 'rgba(255,244,214,0.85)', 600);
+    });
+  },
+};
+
+// ── Dia 4: käyttöliittymä ──
+const s4 = {
+  name: 'Käyttöliittymä', t: 0, ct: 0, pc: -1, lanes: [0, 1, 0], score: 12, popT: 9, ps: new Particles(80),
+  btns: [{ x: 90, y: 218, w: 340, h: 108, down: false }, { x: 462, y: 218, w: 298, h: 108, down: false }],
+  enter() { this.t = 0; this.ct = 0; this.pc = -1; this.score = 12; this.popT = 9; this.lanes = [0, 1, 0]; this.ps.clear(); },
+  update(dt) {
+    this.t += dt; this.popT += dt; cyc(this, dt, 6);
+    const act = [1, 0, 1, 2][((this.t / 1.25) | 0) % 4], k = 1 - Math.exp(-dt * 12);
+    for (let i = 0; i < 3; i++) this.lanes[i] += ((i === act ? 1 : 0) - this.lanes[i]) * k;
+    if (((this.t / 1.6) | 0) !== (((this.t - dt) / 1.6) | 0)) { this.score++; this.popT = 0; }
+    if (hitAt(this, 2.7)) { const b = this.btns[0]; for (let i = 0; i < N(8); i++) { const a = rand(0, TAU), v = rand(200, 340);
+      this.ps.add({ type: 'spark', x: b.x + b.w * 0.87, y: b.y + b.h * 0.78, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 4, r: rand(12, 20), rot: rand(0, TAU), life: rand(0.35, 0.55), col: i % 2 ? C.kerma : C.minttu }); } }
+    this.ps.update(dt);
+  },
+  draw() {
+    const t = this.t, c = this.ct;
+    slideHeader(4, 'Käyttöliittymä');
+
+    // Painikkeet: valinta pitämällä kättä päällä (kehä täyttyy), sitten painallus
+    label('Painikkeet', 90, 192);
+    const [b1, b2] = this.btns;
+    const hover = smooth(seg(c, 1.0, 1.3)) - smooth(seg(c, 3.1, 3.4));
+    const press = Math.max(b1.down ? 1 : 0, c >= 2.7 && c < 3.1 ? (c < 2.78 ? E.outCubic((c - 2.7) / 0.08) : 1 - E.outBack((c - 2.78) / 0.32)) : 0);
+    uiButton(b1.x, b1.y, b1.w, b1.h, 'Aloita', 'primary', press, hover);
+    uiButton(b2.x, b2.y, b2.w, b2.h, 'Takaisin', 'secondary', b2.down ? 1 : 0, 0);
+    txt('Valinta: pidä kättä painikkeen päällä, kunnes kehä täyttyy.', 90, 398, 22, 'rgba(255,244,214,0.75)', 500);
+    this.ps.draw(ctx);
+    const gk = E.inOutCubic(seg(c, 0.5, 1.3)) - E.inOutCubic(seg(c, 3.2, 4.0)); // hanskaosoitin
+    if (gk > 0.01) {
+      const gx = lerp(446, b1.x + b1.w * 0.87, gk), gy = lerp(336, b1.y + b1.h * 0.78, gk) + press * 6;
+      ctx.globalAlpha = sat(gk * 2.5);
+      const dw = seg(c, 1.3, 2.7);
+      if (dw > 0 && c < 3.1) {
+        ctx.lineCap = 'round'; ctx.lineWidth = 9;
+        ctx.strokeStyle = 'rgba(18,10,48,0.55)'; ctx.beginPath(); ctx.arc(gx, gy, 48, 0, TAU); ctx.stroke();
+        ctx.strokeStyle = C.minttu; ctx.beginPath(); ctx.arc(gx, gy, 48, -PI / 2, -PI / 2 + TAU * dw); ctx.stroke();
+      }
+      gloveAt(gx, gy, 108, 1, -PI / 2 - 0.3);
+      ctx.globalAlpha = 1;
+    }
+
+    // Kaistat
+    label('Kaistat', 90, 452);
+    const lane = [['Vasen', C.vasen, C.vasenVarjo, '#fff'], ['Keski', C.kelt, C.keltSyva, C.viiva], ['Oikea', C.oikea, C.oikeaVarjo, '#fff']];
+    lane.forEach(([nm, col, dark, tc], i) => {
+      const x = 90 + i * 230, y = 486, w = 210, h = 104, a = this.lanes[i], r = 34;
+      if (a <= 0.5) {                                   // lepotila: tumma pohja, värillinen kehys
+        rr(ctx, x, y, w, h, r); ctx.fillStyle = 'rgba(18,10,48,0.55)'; ctx.fill();
+        ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.stroke();
+        ctext(nm, x + w / 2, y + h / 2, 38, col, 600);
+      } else {                                          // valittu: täysi väri, nousee ylös (ei värien sekoitusta välissä)
+        const fy = y - 12 * (RM ? 1 : E.outBack((a - 0.5) * 2));
+        ctx.lineWidth = OUT; ctx.strokeStyle = C.viiva; ctx.lineJoin = 'round';
+        rr(ctx, x, y, w, h, r); ctx.fillStyle = dark; ctx.fill(); ctx.stroke();
+        rr(ctx, x, fy, w, h, r); ctx.fillStyle = col; ctx.fill();
+        ctx.save(); ctx.clip(); ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.beginPath(); ctx.ellipse(x + w / 2, fy, w * 0.62, h * 0.4, 0, 0, TAU); ctx.fill(); ctx.restore();
+        rr(ctx, x, fy, w, h, r); ctx.stroke();
+        ctext(nm, x + w / 2, fy + h / 2, 38, tc, 600);
+      }
+    });
+
+    // Pisteet ja aika
+    label('Pisteet ja aika', 90, 662);
+    uiScore(90, 688, this.score, this.popT);
+    uiTime(362, 704, 398, 60, 1 - (t % 14) / 14, t);
+
+    // Taukokortti
+    label('Tauko', 850, 192);
+    const X = 850, Y = 218, Wd = 660, Hd = 350;
+    rr(ctx, X, Y + 12, Wd, Hd, 46); ctx.fillStyle = 'rgba(10,5,30,0.45)'; ctx.fill();
+    const cg = ctx.createLinearGradient(0, Y, 0, Y + Hd); cg.addColorStop(0, '#3A2796'); cg.addColorStop(1, '#2C1B7A');
+    rr(ctx, X, Y, Wd, Hd, 46); ctx.fillStyle = cg; ctx.fill(); ctx.strokeStyle = 'rgba(255,244,214,0.16)'; ctx.lineWidth = 3; ctx.stroke();
+    const pu = 1 + (RM ? 0 : 0.04 * Math.sin(t * 2.4));
+    ctx.save(); ctx.translate(X + 96, Y + 92); ctx.scale(pu, pu);
+    ctx.beginPath(); ctx.arc(0, 0, 50, 0, TAU); ctx.fillStyle = C.kelt; ctx.fill(); ctx.strokeStyle = C.viiva; ctx.lineWidth = OUT; ctx.stroke();
+    ctx.fillStyle = C.viiva; rr(ctx, -21, -22, 15, 44, 6); ctx.fill(); rr(ctx, 6, -22, 15, 44, 6); ctx.fill();
+    ctx.restore();
+    txt('Tauko', X + 172, Y + 118, 76, C.kerma, 700);
+    txt('Nosta molemmat kädet ylös,', X + 46, Y + 190, 30, 'rgba(255,244,214,0.88)', 500);
+    txt('niin peli jatkuu.', X + 46, Y + 228, 30, 'rgba(255,244,214,0.88)', 500);
+    uiButton(X + 46, Y + 254, 250, 70, 'Jatka', 'primary', 0, 0);
+    uiButton(X + 316, Y + 254, 250, 70, 'Lopeta', 'secondary', 0, 0);
+
+    // Lähtölaskenta 3-2-1-POMP!
+    label('Lähtölaskenta', 850, 640);
+    const cd = t % 5.4, cx = 990, cy = 748, step = Math.min(3, cd | 0), kk = cd - step;
+    const names = ['3', '2', '1', 'POMP!'];
+    if (cd < 4.3) {
+      if (step < 3) {
+        ctx.lineWidth = 10; ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(255,244,214,0.12)'; ctx.beginPath(); ctx.arc(cx, cy, 86, 0, TAU); ctx.stroke();
+        ctx.strokeStyle = C.kelt; ctx.beginPath(); ctx.arc(cx, cy, 86, -PI / 2, -PI / 2 + TAU * (1 - E.inOutCubic(kk)) + 0.001); ctx.stroke();
+        const sc = RM ? 1 : 1 + 0.55 * (1 - E.outBack(kk / 0.3));
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.globalAlpha = 1 - E.inCubic(seg(kk, 0.82, 1));
+        depthText(ctx, names[step], 0, 40, 118, C.kelt, C.oikea); ctx.restore(); ctx.globalAlpha = 1;
+      } else {
+        const k2 = cd - 3, sc = RM ? 1 : 0.3 + 0.7 * E.outElastic(k2 / 0.7), al = 1 - E.inCubic(seg(k2, 1.0, 1.3));
+        ctx.globalAlpha = al;
+        const rk = E.outCubic(k2 / 0.5); ctx.lineCap = 'round'; ctx.lineWidth = 9 * (1 - rk) + 0.5;      // säteet
+        for (let i = 0; i < 10; i++) {
+          const a = i * TAU / 10 + 0.2, r0 = 96 + 70 * rk, r1 = r0 + 34 * (1 - rk * 0.6);
+          ctx.strokeStyle = i % 2 ? C.minttu : C.kelt; ctx.globalAlpha = al * (1 - rk);
+          ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0 * 1.35, cy + Math.sin(a) * r0 * 0.8); ctx.lineTo(cx + Math.cos(a) * r1 * 1.35, cy + Math.sin(a) * r1 * 0.8); ctx.stroke();
+        }
+        ctx.globalAlpha = al;
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.05); ctx.scale(sc, sc); depthText(ctx, 'POMP!', 0, 34, 96, C.kelt, C.oikea); ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+    }
+    const xs = [1196, 1256, 1316, 1420];
+    names.forEach((nm, i) => { const on = cd < 4.3 && i === step; ctext(nm, xs[i], cy, 44, on ? C.kelt : 'rgba(255,244,214,0.3)', 700); });
+  },
+  hit(x, y) { // hiirellä tai sormella voi painaa esittelypainikkeita
+    for (const b of this.btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h + 12) { b.down = true; return true; }
+    return false;
+  },
+  release() { for (const b of this.btns) b.down = false; },
+};
+
+// ── Dia 5: esimerkkipeli (sivulle rullaava hyppypeli) ──
+const GX = 470, GY = 742, GU = 62, SEG = 2000;
+const HILLS = [ // parallaksi: kaukana vaalea ja hidas, lähellä tumma ja nopea
+  { par: 0.08, base: GY - 170, amp: 80, f: 0.0031, seed: 1.3, col: '#4A33B6' },
+  { par: 0.2, base: GY - 95, amp: 62, f: 0.0043, seed: 4.1, col: '#3D2A9E' },
+  { par: 0.45, base: GY - 34, amp: 40, f: 0.0061, seed: 2.2, col: '#322183' },
+];
+const hillY = (L, x) => L.base - L.amp * (0.5 + 0.5 * Math.sin(x * L.f + L.seed)) - L.amp * 0.3 * Math.sin(x * L.f * 2.3 + L.seed * 1.7);
+const s5 = {
+  name: 'Esimerkkipeli', full: true,
+  t: 0, wx: 0, score: 0, popT: 9, ents: [], nextSeg: 0, rocks: 0, jumpT: -1, phase: '', hitT: 9, shakeT: 9,
+  runPh: 0, runK: 1, P: null, rig: new CharacterRig(), ps: new Particles(320),
+  enter() {
+    this.t = 0; this.wx = 0; this.score = 0; this.popT = 9; this.ents = []; this.nextSeg = 0; this.rocks = 0; this.jumpT = -1;
+    this.phase = ''; this.hitT = 9; this.shakeT = 9; this.runPh = 0; this.runK = 1; this.rig.reset(); this.ps.clear(); this.update(0);
+  },
+  spawn(k) {
+    const b = k * SEG + 1250, E_ = this.ents;
+    const star = (x, high) => E_.push({ type: 'star', x, y: high ? GY - 6.9 * GU : GY - 2.35 * GU, ph: hash(x) * TAU });
+    const rock = (x) => { this.rocks++; E_.push({ type: 'rock', x, miss: this.rocks % 4 === 0, done: false, flip: this.rocks % 2 ? 1 : -1, bump: 9 }); star(x, true); };
+    star(b + 250); star(b + 370); star(b + 490); rock(b + 880); star(b + 1260); star(b + 1380); rock(b + 1770);
+  },
+  update(dt) {
+    const g = this, sp = RM ? 380 : 520;
+    g.t += dt; g.popT += dt; g.hitT += dt; g.shakeT += dt; g.wx += sp * dt;
+    while (g.nextSeg * SEG + 1250 < g.wx + (view.x1 - view.x0) + 600) g.spawn(g.nextSeg++);
+    // esteet: hyppy ajoitetaan niin, että kaaren huippu osuu kiven kohdalle (joka neljäs jää väliin → osuma)
+    for (const e of g.ents) {
+      if (e.type !== 'rock') continue;
+      const dx = e.x - g.wx - GX; e.bump += dt;
+      if (!e.done && !e.miss && g.jumpT < 0 && dx <= sp * (J.ant + J.air / 2)) { e.done = true; g.jumpT = 0; }
+      if (!e.done && e.miss && dx < 66) {
+        e.done = true; e.bump = 0; g.hitT = 0; g.shakeT = 0; g.rig.oopsie(1);
+        fxHit(g.ps, GX + 40, GY - 1.6 * GU, 1);
+      }
+    }
+    // asento: hölkkä + käsikirjoitettu hyppy + osuman horjahdus
+    const p = poseDefaults();
+    let js = null;
+    if (g.jumpT >= 0) { g.jumpT += dt; js = jumpState(g.jumpT); if (!js) g.jumpT = -1; }
+    g.runK += ((js ? 0 : 1) - g.runK) * (1 - Math.exp(-dt * 16));
+    const s0 = Math.sin(g.runPh); g.runPh += dt * TAU * (RM ? 1.1 : 1.45); const s1_ = Math.sin(g.runPh);
+    applyRun(p, g.runPh, g.runK);
+    if (js) { applyJump(p, js); if (js.phase === 'air') g.rig.cheer(0.5); }
+    const phase = js ? js.phase : '';
+    if (phase !== g.phase) {
+      if (phase === 'air') { fxDust(g.ps, GX, GY - 4, 1, 6, 1); fxStars(g.ps, GX, GY - 24, 1, 5); }
+      if (phase === 'land') fxDust(g.ps, GX, GY - 4, 1.1, 8, 1.3);
+      g.phase = phase;
+    }
+    if (!js && s0 * s1_ < 0 && g.runK > 0.8) fxDust(g.ps, GX + (s0 > 0 ? -0.42 : 0.42) * GU - 10, GY - 2, 0.6, 2, 0.5); // askelpöly
+    if (g.hitT < 0.6) { const k = Math.sin(PI * sat(g.hitT / 0.6)); p.elev += 0.3 * Math.sin(PI * sat(g.hitT / 0.4)); p.lean -= 0.16 * k; p.aL1 += 0.9 * k; p.aR1 += 0.9 * k; }
+    g.P = buildPose(p, GX, GY, GU);
+    g.rig.update(g.P, GU, dt);
+    // keräily: pää tai rintakehä osuu tähteen
+    const head = g.P[LM.NOSE], cy = (g.P[LM.L_SHOULDER].y + g.P[LM.L_HIP].y) / 2;
+    for (const e of g.ents) {
+      if (e.type !== 'star' || e.got) continue;
+      const sx = e.x - g.wx;
+      if (Math.hypot(sx - head.x, e.y - (head.y - HEAD_UP * GU)) < 0.84 * GU + 28 || Math.hypot(sx - GX, e.y - cy) < 0.85 * GU + 20) {
+        e.got = true; g.score++; g.popT = 0; g.rig.cheer(0.9); fxCollect(g.ps, sx, e.y, 1);
+      }
+    }
+    g.ents = g.ents.filter((e) => !e.got && e.x - g.wx > view.x0 - 200);
+    for (const q of g.ps.a) q.x -= sp * dt * 0.35;   // hiukkaset jäävät hieman jälkeen
+    g.ps.update(dt);
+  },
+  layer(L) {
+    const off = this.wx * L.par;
+    ctx.beginPath(); ctx.moveTo(view.x0 - 60, view.y1 + 40);
+    for (let x = view.x0 - 60; x <= view.x1 + 90; x += 28) ctx.lineTo(x, hillY(L, x + off));
+    ctx.lineTo(view.x1 + 90, view.y1 + 40); ctx.closePath(); ctx.fillStyle = L.col; ctx.fill();
+    return off;
+  },
+  draw() {
+    const g = this, t = g.t, X0 = view.x0 - 60, X1 = view.x1 + 60, VW = X1 - X0;
+    // taivas, tähdet, kuu
+    const sky = ctx.createLinearGradient(0, view.y0, 0, GY);
+    sky.addColorStop(0, '#130A36'); sky.addColorStop(0.5, '#2A1A7A'); sky.addColorStop(1, '#6447D6');
+    ctx.fillStyle = sky; ctx.fillRect(X0, view.y0 - 20, VW, GY - view.y0 + 40);
+    drawSkyStars(t, GY - 330);
+    const mx = view.x1 - 330, my = 205;
+    const halo = ctx.createRadialGradient(mx, my, 40, mx, my, 220); halo.addColorStop(0, 'rgba(255,244,214,0.22)'); halo.addColorStop(1, 'rgba(255,244,214,0)');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(mx, my, 220, 0, TAU); ctx.fill();
+    const mp = () => { ctx.beginPath(); ctx.arc(mx, my, 64, 0, TAU); };
+    celFill(ctx, mp, C.kerma, '#E6D3A4', -9, -10);
+    // pilvet (hitain kerros)
+    ctx.fillStyle = 'rgba(140,120,245,0.26)';
+    for (let i = 0; i < 4; i++) {
+      const span = VW + 700, cx = X0 - 350 + ((((i * 610 + 180 - g.wx * 0.035) % span) + span) % span);
+      const cy = [330, 400, 452, 372][i], s = [1, 1.3, 1.15, 1.1][i];   // kuun alapuolella, osin kukkuloiden takana
+      ctx.beginPath();                                  // yksi polku → päällekkäiset osat eivät tummu
+      for (const [ox, oy, r] of [[-62, 6, 34], [-18, -16, 46], [36, -6, 40], [78, 12, 28]]) { ctx.moveTo(cx + (ox + r) * s, cy + oy * s); ctx.arc(cx + ox * s, cy + oy * s, r * s, 0, TAU); }
+      ctx.rect(cx - 62 * s, cy + 6 * s, 140 * s, 34 * s); ctx.fill();
+    }
+    // kukkulat ja puut
+    g.layer(HILLS[0]);
+    const off1 = g.layer(HILLS[1]);
+    ctx.fillStyle = '#4733AE';
+    for (let n = Math.floor((off1 + X0 - 120) / 520); n <= Math.ceil((off1 + X1 + 120) / 520); n++) {
+      const lx = n * 520 + 150 * (hash(n) - 0.5), x = lx - off1, y = hillY(HILLS[1], lx) + 8, s = 0.85 + 0.4 * hash(n + 9);
+      ctx.fillRect(x - 6 * s, y - 62 * s, 12 * s, 66 * s);
+      ctx.beginPath(); ctx.arc(x, y - 88 * s, 42 * s, 0, TAU); ctx.moveTo(x + 52 * s, y - 62 * s); ctx.arc(x + 26 * s, y - 62 * s, 26 * s, 0, TAU); ctx.fill();
+    }
+    const off2 = g.layer(HILLS[2]);
+    ctx.fillStyle = HILLS[2].col;
+    for (let n = Math.floor((off2 + X0 - 80) / 380); n <= Math.ceil((off2 + X1 + 80) / 380); n++) {
+      const lx = n * 380 + 120 * (hash(n + 40) - 0.5), x = lx - off2, y = hillY(HILLS[2], lx), r = 30 + 18 * hash(n + 3);
+      ctx.beginPath(); ctx.arc(x, y - r * 0.3, r, 0, TAU); ctx.moveTo(x + r * 1.9, y); ctx.arc(x + r * 1.1, y - r * 0.1, r * 0.75, 0, TAU); ctx.fill();
+    }
+
+    // maailma (tärähtää kevyesti osumassa)
+    ctx.save();
+    if (g.shakeT < 0.45 && !RM) { const a = 9 * Math.exp(-g.shakeT * 9); ctx.translate(a * Math.sin(g.shakeT * 62), a * 0.6 * Math.cos(g.shakeT * 77)); }
+    const soil = ctx.createLinearGradient(0, GY, 0, view.y1); soil.addColorStop(0, '#3F2BA2'); soil.addColorStop(1, '#22145C');
+    ctx.fillStyle = soil; ctx.fillRect(X0, GY - 4, VW, view.y1 - GY + 60);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    for (let n = Math.floor((g.wx + X0 - 60) / 240); n <= Math.ceil((g.wx + X1 + 60) / 240); n++) {
+      ctx.beginPath(); ctx.ellipse(n * 240 + 120 * hash(n + 70) - g.wx, GY + 52 + 86 * hash(n + 5), 20 + 16 * hash(n + 2), 7, 0, 0, TAU); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(14,6,40,0.28)'; ctx.fillRect(X0, GY + 14, VW, 9);          // reunuksen varjo
+    ctx.fillStyle = '#8B78F0'; ctx.fillRect(X0, GY - 10, VW, 24);                    // polun reunus
+    ctx.fillStyle = '#AC9CFB'; ctx.fillRect(X0, GY - 10, VW, 5);
+    ctx.fillStyle = '#7460E0';
+    for (let n = Math.floor((g.wx + X0 - 60) / 180); n <= Math.ceil((g.wx + X1 + 60) / 180); n++) { rr(ctx, n * 180 - g.wx, GY + 1, 48, 8, 4); ctx.fill(); }
+
+    for (const e of g.ents) { // esteet ja tähdet
+      const x = e.x - g.wx; if (x < X0 - 120 || x > X1 + 120) continue;
+      if (e.type === 'rock') {
+        ctx.fillStyle = 'rgba(14,6,40,0.35)'; ctx.beginPath(); ctx.ellipse(x, GY + 4, 62, 9, 0, 0, TAU); ctx.fill();
+        const wob = e.bump < 0.5 && !RM ? 1 - 0.14 * Math.exp(-e.bump * 8) * Math.cos(e.bump * 40) : 1;
+        ctx.save(); ctx.translate(x, GY + 4); ctx.scale(e.flip, 1); drawRock(ctx, 0, 0, 1, wob); ctx.restore();
+      } else {
+        const y = e.y + (RM ? 0 : 7 * Math.sin(t * 3 + e.ph));
+        const gl = ctx.createRadialGradient(x, y, 6, x, y, 64); gl.addColorStop(0, 'rgba(255,224,138,0.4)'); gl.addColorStop(1, 'rgba(255,224,138,0)');
+        ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, 64, 0, TAU); ctx.fill();
+        drawStar(ctx, x, y, 31, RM ? 0 : 0.14 * Math.sin(t * 2.2 + e.ph), OUT);
+      }
+    }
+    drawCharacterShadow(ctx, g.P, GU, GY + 2);
+    const blinkOff = !RM && g.hitT > 0.12 && g.hitT < 0.7 && ((g.hitT * 12) | 0) % 2 === 1;                // osuman jälkeen hahmo vilkkuu hetken
+    if (!blinkOff) drawCharacter(ctx, g.P, GU, g.rig.state);
+    g.ps.draw(ctx);
+    ctx.fillStyle = '#160C3C';                                                       // etualan pensaat
+    for (let n = Math.floor((g.wx * 1.35 + X0 - 300) / 1500); n <= Math.ceil((g.wx * 1.35 + X1 + 300) / 1500); n++) {
+      const x = n * 1500 + 500 * hash(n + 21) - g.wx * 1.35, y = view.y1 + 46;
+      ctx.beginPath(); ctx.arc(x, y, 92, 0, TAU); ctx.moveTo(x + 190, y + 10); ctx.arc(x + 110, y + 10, 70, 0, TAU); ctx.moveTo(x - 30, y + 20); ctx.arc(x - 90, y + 20, 58, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+
+    // HUD: vain pisteet ja aika
+    uiScore(view.x0 + 56, view.y0 + 44, g.score, g.popT);
+    uiTime(view.x1 - 56 - 420, view.y0 + 58, 420, 64, 1 - (t % 40) / 40, t);
+    rr(ctx, DW / 2 - 330, 786, 660, 50, 25); ctx.fillStyle = 'rgba(18,10,48,0.6)'; ctx.fill();
+    ctext('Esimerkkipeli · Hyppää kivien yli ja kerää tähdet', DW / 2, 811, 25, 'rgba(255,244,214,0.9)', 500);
+  },
+};
+
+// ── Dia 6: tehosteet ──
+const TILE = { A: [90, 165, 453, 300], B: [573, 165, 453, 300], C: [1056, 165, 454, 300], D: [90, 495, 453, 325], E: [573, 495, 937, 325] };
+function tile(r, name, fn) {
+  const [x, y, w, h] = r;
+  panel(x, y, w, h, 40);
+  ctx.save(); rr(ctx, x, y, w, h, 40); ctx.clip(); fn(x, y, w, h); ctx.restore();
+  txt(name, x + 28, y + h - 26, 27, C.kerma, 600);
+}
+const bez = (a, b, c, u) => (1 - u) * (1 - u) * a + 2 * (1 - u) * u * b + u * u * c;
+const s6 = {
+  name: 'Tehosteet', t: 0,
+  A: { ct: 0, pc: -1, ps: new Particles(80), rig: new CharacterRig(), P: null, phase: '' },
+  B: { ct: 0, pc: -1, ps: new Particles(80) },
+  Cc: { ct: 0, pc: -1, ps: new Particles(60), trail: [[], []] },
+  D: { ct: 0, pc: -1, ps: new Particles(60) },
+  Eb: { ct: 0, pc: -1, ps: new Particles(160) },
+  enter() {
+    this.t = 0;
+    for (const o of [this.A, this.B, this.Cc, this.D, this.Eb]) { o.ct = 0; o.pc = -1; o.ps.clear(); }
+    this.A.rig.reset(); this.A.phase = ''; this.Cc.trail = [[], []]; this.update(0);
+  },
+  swipe(i, c) { // käden paikka ajan funktiona: nopea viilto, hidas paluu
+    const [x, y, w, h] = TILE.C, a = i ? 2.0 : 0.45;
+    const k = c < a ? 0 : c < a + 0.3 ? E.inOutCubic((c - a) / 0.3) : c < a + 0.65 ? 1 : c < a + 1.3 ? 1 - E.inOutCubic((c - a - 0.65) / 0.65) : 0;
+    const s = i ? -1 : 1, cx = x + w / 2;
+    const x0 = cx + s * 130, y0 = y + 72, x1 = cx - s * 120, y1 = y + h - 108, mx = cx + s * 70, my = y + h - 70;
+    return { x: bez(x0, mx, x1, k), y: bez(y0, my, y1, k), fast: c >= a && c < a + 0.3, k };
+  },
+  update(dt) {
+    this.t += dt; const t = this.t;
+    { // A: hyppy
+      const o = this.A, [x, y, w, h] = TILE.A, gy = y + h - 74, cx = x + w / 2, u = 27;
+      cyc(o, dt, 2.3);
+      const p = poseIdle(t), js = jumpState(o.ct - 0.7), phase = js ? js.phase : '';
+      if (js) { applyJump(p, js); if (phase === 'air') o.rig.cheer(1); }
+      if (phase !== o.phase) {
+        if (phase === 'air') { fxDust(o.ps, cx, gy, 0.55, 6, 0.7); fxStars(o.ps, cx, gy - 10, 0.6, 6); }
+        if (phase === 'land') fxDust(o.ps, cx, gy, 0.6, 8, 0.9);
+        o.phase = phase;
+      }
+      o.P = buildPose(p, cx, gy, u); o.rig.update(o.P, u, dt); o.ps.update(dt);
+    }
+    { const o = this.B, [x, y, w] = TILE.B; cyc(o, dt, 2.2); if (hitAt(o, 1.3)) fxCollect(o.ps, x + w / 2, y + 122, 1); o.ps.update(dt); }
+    { // C: viilto
+      const o = this.Cc; cyc(o, dt, 3.5);
+      for (let i = 0; i < 2; i++) {
+        const s = this.swipe(i, o.ct), tr = o.trail[i];
+        if (s.fast) { tr.push({ x: s.x, y: s.y, t }); if (Math.random() < 0.5) o.ps.add({ type: 'spark', x: s.x, y: s.y, vx: rand(-80, 80), vy: rand(-80, 80), drag: 3, r: rand(8, 14), rot: rand(0, TAU), life: rand(0.25, 0.4), col: C.kerma }); }
+        while (tr.length && t - tr[0].t > 0.3) tr.shift();
+      }
+      o.ps.update(dt);
+    }
+    { const o = this.D, [x, y, w, h] = TILE.D; cyc(o, dt, 2.5); if (hitAt(o, 0.95)) { fxDust(o.ps, x + w / 2, y + h - 80, 1, 10, 1.6); o.ps.add({ type: 'ring', x: x + w / 2, y: y + h - 84, vx: 0, vy: 0, r0: 30, r1: 150, w: 12, life: 0.35, col: C.kerma }); } o.ps.update(dt); }
+    { const o = this.Eb, [x, y, w, h] = TILE.E; cyc(o, dt, 4.2); if (hitAt(o, 0.5)) { fxConfetti(o.ps, x + 150, y + h - 40, 1, 22); fxConfetti(o.ps, x + w - 150, y + h - 40, -1, 22); } o.ps.update(dt); }
+  },
+  draw() {
+    const t = this.t;
+    slideHeader(6, 'Tehosteet');
+    tile(TILE.A, 'Hyppy: pöly ja tähdet', (x, y, w, h) => {
+      const o = this.A, gy = y + h - 74;
+      ctx.fillStyle = 'rgba(255,244,214,0.10)'; ctx.fillRect(x, gy + 6, w, 3);
+      drawCharacterShadow(ctx, o.P, 27, gy + 2); o.ps.draw(ctx); drawCharacter(ctx, o.P, 27, o.rig.state);
+    });
+    tile(TILE.B, 'Keräys: kipinät ja +1', (x, y, w) => {
+      const o = this.B, c = o.ct, cx = x + w / 2, cy = y + 122;
+      if (c < 1.3) {
+        const s = RM ? sat(c / 0.2) : E.outBack(c / 0.4), bob = RM ? 0 : 7 * Math.sin(t * 3);
+        const gl = ctx.createRadialGradient(cx, cy + bob, 8, cx, cy + bob, 92); gl.addColorStop(0, 'rgba(255,224,138,0.4)'); gl.addColorStop(1, 'rgba(255,224,138,0)');
+        ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(cx, cy + bob, 92, 0, TAU); ctx.fill();
+        drawStar(ctx, cx, cy + bob, 46 * s, RM ? 0 : 0.14 * Math.sin(t * 2.2), OUT);
+      } else if (c < 1.42) { drawStar(ctx, cx, cy, 46 * (1 + 2.2 * (c - 1.3)) * (1 - seg(c, 1.3, 1.42) * 0.7), 0, OUT); }
+      o.ps.draw(ctx);
+    });
+    tile(TILE.C, 'Viilto: käden vana', () => {
+      const o = this.Cc;
+      for (let i = 0; i < 2; i++) drawTrail(ctx, o.trail[i], t, 0.3, 21, i ? C.vasen : C.oikea);
+      o.ps.draw(ctx);
+      for (let i = 0; i < 2; i++) { const s = this.swipe(i, o.ct); gloveAt(s.x, s.y, 84, i ? -1 : 1, PI / 2 + (i ? -1 : 1) * (0.5 + 0.5 * s.k) - PI); }
+    });
+    tile(TILE.D, 'Osuma: kevyt tärähdys', (x, y, w, h) => {
+      const o = this.D, c = o.ct, gy = y + h - 80, cx = x + w / 2, k = c - 0.95;
+      if (k >= 0 && k < 0.45 && !RM) { const a = 8 * Math.exp(-k * 9); ctx.translate(a * Math.sin(k * 62), a * 0.6 * Math.cos(k * 77)); }
+      ctx.fillStyle = 'rgba(255,244,214,0.10)'; ctx.fillRect(x - 20, gy + 6, w + 40, 3);
+      const fall = E.inQuad(seg(c, 0.5, 0.95)), ry = lerp(y - 60, gy + 6, fall), out = 1 - E.inCubic(seg(c, 2.1, 2.4));
+      const sy = k >= 0 && !RM ? 1 - 0.22 * Math.exp(-k * 7) * Math.cos(k * 24) : 1;
+      ctx.fillStyle = `rgba(14,6,40,${(0.38 * fall * out).toFixed(3)})`; ctx.beginPath(); ctx.ellipse(cx, gy + 8, 86 * (0.5 + 0.5 * fall), 11, 0, 0, TAU); ctx.fill();
+      o.ps.draw(ctx);
+      if (c >= 0.5 && out > 0.02) drawRock(ctx, cx, ry, 1.35 * out, sy);
+    });
+    tile(TILE.E, 'Onnistuminen: ”Hienoa!”', (x, y, w, h) => {
+      const o = this.Eb, c = o.ct, cx = x + w / 2, cy = y + h / 2 - 26;
+      const sc = (RM ? sat((c - 0.4) / 0.2) : E.outBack((c - 0.4) / 0.5)) * (1 - E.inCubic(seg(c, 3.2, 3.5)));
+      o.ps.draw(ctx);
+      if (c > 0.4 && sc > 0.01) {
+        const W = 520, H = 118, D = 13;
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.035 + (RM ? 0 : 0.02 * Math.sin(t * 2))); ctx.scale(sc, sc);
+        ctx.lineJoin = 'round'; ctx.strokeStyle = C.viiva; ctx.lineWidth = OUT;
+        rr(ctx, -W / 2, -H / 2 + D, W, H, H / 2); ctx.fillStyle = C.minttuVarjo; ctx.fill(); ctx.stroke();
+        const g = ctx.createLinearGradient(0, -H / 2, 0, H / 2); g.addColorStop(0, '#62EBC3'); g.addColorStop(1, C.minttu);
+        rr(ctx, -W / 2, -H / 2, W, H, H / 2); ctx.fillStyle = g; ctx.fill();
+        ctx.save(); ctx.clip();
+        ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.ellipse(0, -H / 2, W * 0.6, H * 0.42, 0, 0, TAU); ctx.fill();
+        const sw = seg(c, 1.0, 1.6);                                               // kiiltopyyhkäisy
+        if (sw > 0 && sw < 1 && !RM) { const sx = lerp(-W / 2 - 80, W / 2 + 80, E.inOutCubic(sw)); ctx.fillStyle = 'rgba(255,255,255,0.4)';
+          ctx.beginPath(); ctx.moveTo(sx - 26, H / 2); ctx.lineTo(sx + 14, -H / 2); ctx.lineTo(sx + 58, -H / 2); ctx.lineTo(sx + 18, H / 2); ctx.closePath(); ctx.fill(); }
+        ctx.restore();
+        rr(ctx, -W / 2, -H / 2, W, H, H / 2); ctx.stroke();
+        ctext('Hienoa!', 0, 0, 78, C.viiva, 700);
+        const s2_ = RM ? 1 : E.outBack((c - 0.62) / 0.4), s3_ = RM ? 1 : E.outBack((c - 0.74) / 0.4);
+        drawStar(ctx, -W / 2 + 6, -H / 2 + 4, 44 * s2_, -0.3, OUT); drawStar(ctx, W / 2 - 8, -H / 2 + 2, 36 * s3_, 0.3, OUT);
+        ctx.restore();
+      }
+    });
+  },
+};
+// dia 5 on pelinäkymä, dia 6 tehosteet
+const slides = [s1, s2, s3, s4, s5, s6];
+
+// ───────────────────────── 10. Selaus ja pääsilmukka ─────────────────────────
+let cur = 0, tr = null, T = 0, last = 0, auto = false, autoT = 0;
+const TR_D = 0.44, AUTO_S = 12;
+const dotsEl = document.getElementById('pisteet'), hintEl = document.getElementById('vihje'), autoEl = document.getElementById('auto');
+const dots = slides.map((s, i) => {
+  const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-label', `Dia ${i + 1}: ${s.name}`);
+  b.appendChild(document.createElement('span')); b.addEventListener('click', () => go(i)); dotsEl.appendChild(b); return b;
+});
+function syncDots(i) { dots.forEach((b, j) => b.setAttribute('aria-current', j === i ? 'true' : 'false')); }
+function go(n) {
+  n = clamp(n, 0, slides.length - 1); autoT = 0;
+  const target = tr ? tr.to : cur;
+  if (n === target) return;
+  if (tr && !tr.sw) { tr.to = n; tr.dir = n > cur ? 1 : -1; } else tr = { to: n, dir: n > cur ? 1 : -1, t: 0, sw: false };
+  syncDots(n); hintEl.classList.remove('nakyy');
+  try { history.replaceState(null, '', '#' + (n + 1)); } catch (e) { /* file:// */ }
+}
+const next = () => go((tr ? tr.to : cur) + 1), prev = () => go((tr ? tr.to : cur) - 1);
+function setAuto(on) { auto = on; autoT = 0; autoEl.classList.toggle('nakyy', on); }
+
+window.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if ((k === ' ' || k === 'Enter') && e.target && e.target.tagName === 'BUTTON') return; // kohdistettu piste hoitaa itse
+  if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'Enter') { next(); e.preventDefault(); }
+  else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'Backspace') { prev(); e.preventDefault(); }
+  else if (k === 'Home') go(0);
+  else if (k === 'End') go(slides.length - 1);
+  else if (k >= '1' && k <= String(slides.length)) go(+k - 1);
+  else if (k === 'a' || k === 'A') setAuto(!auto);
+  else if (k === 'f' || k === 'F') {
+    const d = document, el = d.documentElement;
+    if (d.fullscreenElement) { if (d.exitFullscreen) d.exitFullscreen(); } else if (el.requestFullscreen) { const p = el.requestFullscreen(); if (p && p.catch) p.catch(() => {}); }
+  }
+});
+let down = null;
+cv.addEventListener('pointerdown', (e) => {
+  down = { x: e.clientX, y: e.clientY, ui: false };
+  const sl = slides[cur];
+  if (!tr && sl.hit && sl.hit((e.clientX - view.ox) / view.s, (e.clientY - view.oy) / view.s)) down.ui = true;
+});
+const pointerEnd = (e, cancel) => {
+  for (const s of slides) if (s.release) s.release();
+  const d = down; down = null;
+  if (!d || d.ui || cancel) return;
+  const dx = e.clientX - d.x;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(e.clientY - d.y)) { if (dx < 0) next(); else prev(); }  // pyyhkäisy
+  else if (e.clientX < view.W / 2) prev(); else next();                                                   // napautus: vasen / oikea puolisko
+};
+cv.addEventListener('pointerup', (e) => pointerEnd(e, false));
+cv.addEventListener('pointercancel', (e) => pointerEnd(e, true));
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+
+function chevrons() { // hienovaraiset nuolet reunoissa
+  const i = tr ? tr.to : cur;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(255,244,214,0.22)';
+  ctx.beginPath();
+  if (i > 0) { const x = view.x0 + 34; ctx.moveTo(x + 9, DH / 2 - 18); ctx.lineTo(x - 9, DH / 2); ctx.lineTo(x + 9, DH / 2 + 18); }
+  if (i < slides.length - 1) { const x = view.x1 - 34; ctx.moveTo(x - 9, DH / 2 - 18); ctx.lineTo(x + 9, DH / 2); ctx.lineTo(x - 9, DH / 2 + 18); }
+  ctx.stroke();
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = last ? clamp((now - last) / 1000, 0, 0.05) : 0; last = now; T += dt;
+  if (auto) { autoT += dt; if (autoT > AUTO_S) go(((tr ? tr.to : cur) + 1) % slides.length); }
+  let shift = 0, cover = 0;
+  if (tr) { // siirtymä: vanha dia häipyy taustaan, uusi nousee esiin
+    tr.t += dt; const k = tr.t / TR_D;
+    if (!tr.sw && k >= 0.5) { tr.sw = true; cur = tr.to; slides[cur].enter(); }
+    if (k < 0.5) { const e = E.inCubic(k * 2); shift = -tr.dir * 46 * e; cover = e; }
+    else { const e = E.outCubic((k - 0.5) * 2); shift = tr.dir * 46 * (1 - e); cover = 1 - e; }
+    if (k >= 1) { tr = null; shift = 0; cover = 0; }
+  }
+  const sl = slides[cur];
+  sl.update(dt);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  ctx.drawImage(bg, 0, 0, cv.width, cv.height);
+  setDesign(RM ? 0 : shift);
+  if (!sl.full) drawSkyStars(T, view.y1);
+  sl.draw();
+  chevrons();
+  if (cover > 0.001) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = cover; ctx.drawImage(bg, 0, 0, cv.width, cv.height); ctx.globalAlpha = 1; }
+}
+
+// Käynnistys
+resize();
+const h0 = parseInt((location.hash || '').slice(1), 10);
+if (h0 >= 1 && h0 <= slides.length) cur = h0 - 1;
+syncDots(cur); slides[cur].enter();
+if (/[?&]auto=1/.test(location.search)) setAuto(true);
+const t0 = parseFloat((/[?&]t=([\d.]+)/.exec(location.search) || [])[1]); // ?t=3.5 kelaa dian alkuun 3,5 s (tarkistuskuvia varten)
+if (t0 > 0) { for (let i = 0; i < Math.min(t0, 120) * 60; i++) slides[cur].update(1 / 60); T += t0; }
+if (cur === 0) { hintEl.classList.add('nakyy'); setTimeout(() => hintEl.classList.remove('nakyy'), 7000); }
+if (document.fonts && document.fonts.load) { // fontin lataus: logo piirretään uudelleen, kun Fredoka on valmis
+  const bump = () => { fontVer++; };
+  Promise.all([400, 500, 600, 700].map((w) => document.fonts.load(font(w, 40), 'Pomp! 123'))).then(bump, bump);
+  if (document.fonts.ready) document.fonts.ready.then(bump, bump);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
