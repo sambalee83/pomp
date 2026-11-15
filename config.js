@@ -66,6 +66,11 @@ export const CONFIG = {
     maxKestoMs: 1200,     // jos "hyppy" kestää pidempään, se ei ollut hyppy vaan perustaso oli väärä
     taukoMs: 150,         // lyhin aika kahden hypyn välillä
     laskeutumisSuojaMs: 400, // laskeutumisen niiaus ei saa näkyä kyykkynä
+    // Hahmon hypyn liioittelu: vaikuttaa vain siihen, miltä hahmo näyttää, ei hypyn tunnistukseen.
+    liioittelu: 3,        // hahmon hypyn korkeus = oikea nousu x tämä. 1 = ei liioittelua. Kokeile 2–5.
+    pohjaNousu: 0.6,      // hahmo nousee aina vähintään näin paljon (S), kun hyppy tunnistetaan. 0 = pois.
+    nousuTau: 0.06,       // s, kuinka nopeasti hahmo ponnahtaa ylös (pienempi = napakampi)
+    laskuTau: 0.22,       // s, kuinka pehmeästi hahmo laskeutuu takaisin
   },
 
   kyykky: {

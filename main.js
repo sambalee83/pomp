@@ -40,7 +40,7 @@ const avatar = new Avatar(CONFIG);
 const stats = { fps: 60, poseFps: 0, inferMs: 0, delegate: '–' };
 const flash = { jump: 0, squat: 0, step: 0 };
 const trails = { left: [], right: [] };
-let particles = [];
+let particles = [], jumpLift = 0;
 let lastFrame = performance.now(), lastDetect = 0, lastVideoTime = -1, detectErrors = 0;
 let map = null; // viimeisin muunnos videon pikseleistä ruudulle (simulaattorin hiirtä varten)
 
@@ -205,7 +205,15 @@ function drawLab(dt) {
   });
 
   if (pose && s.present) {
-    avatar.update(pose.pts.map((p) => { const q = toScreen(p); q.v = p.v; return q; }), scale, dt);
+    // Hypyn liioittelu: hahmo nousee ruudulla korkeammalle kuin lapsi oikeasti (vain kuvassa)
+    const hy = CONFIG.hyppy;
+    const goal = s.jump.active ? (s.jump.height * (hy.liioittelu - 1) + hy.pohjaNousu) * scale : 0;
+    const tau = goal > jumpLift ? hy.nousuTau : hy.laskuTau;
+    jumpLift += (goal - jumpLift) * (1 - Math.exp(-dt / tau));
+    const pts = pose.pts.map((p) => { const q = toScreen(p); q.v = p.v; return q; });
+    const topY = Math.min(...pts.map((q) => q.y));
+    const lift = Math.min(jumpLift, Math.max(0, topY - 50)); // pää ei lennä ruudun yläreunan yli
+    avatar.update(pts.map((q) => ({ x: q.x, y: q.y - lift, v: q.v })), scale, dt);
   }
   avatar.drawShadow(ctx, floorY);
 
